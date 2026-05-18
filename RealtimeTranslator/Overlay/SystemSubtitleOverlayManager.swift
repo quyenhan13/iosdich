@@ -199,9 +199,9 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         let textWidth = boundingBox.width.rounded(.up)
         let textHeight = boundingBox.height.rounded(.up)
 
-        // Hộp đen mờ bo tròn ôm sát nội dung chữ (Padding ngang 40, dọc 20)
-        let boxWidth = min(textWidth + 40, renderSize.width - 20)
-        let boxHeight = min(textHeight + 20, renderSize.height - 16)
+        // Hộp đen mờ bo tròn ôm sát nội dung chữ (Padding ngang 40, dọc 20) - Dùng toán tử ba ngôi loại bỏ hoàn toàn cảnh báo/lỗi phân giải kiểu dữ liệu
+        let boxWidth = textWidth + 40 < renderSize.width - 20 ? textWidth + 40 : renderSize.width - 20
+        let boxHeight = textHeight + 20 < renderSize.height - 16 ? textHeight + 20 : renderSize.height - 16
         let boxRect = CGRect(
             x: (renderSize.width - boxWidth) / 2,
             y: (renderSize.height - boxHeight) / 2,

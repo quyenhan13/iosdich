@@ -36,7 +36,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            clean build > xcodebuild.log 2>&1 || (cat xcodebuild.log && exit 1)
+            clean build > xcodebuild.log 2>&1 || (grep -i -C 5 "error:" xcodebuild.log && exit 1)
 
       - name: Đóng gói TrollStore IPA
         run: |

@@ -296,15 +296,17 @@ private final class BroadcastPCMConverter {
         guard status == noErr else { return nil }
 
         pcmBuffer.frameLength = frameCount
-        let bytesPerFrame = max(Int(stream.mBytesPerFrame), 1)
+        let bytesPerFrame = Int(stream.mBytesPerFrame) > 1 ? Int(stream.mBytesPerFrame) : 1
         let byteCount = Int(frameCount) * bytesPerFrame
 
         if stream.mFormatFlags & kAudioFormatFlagIsFloat != 0, let floatChannelData = pcmBuffer.floatChannelData {
             let source = audioBufferList.mBuffers.mData!.assumingMemoryBound(to: Float.self)
-            floatChannelData[0].assign(from: source, count: min(Int(frameCount), byteCount / MemoryLayout<Float>.size))
+            let count = Int(frameCount) < byteCount / MemoryLayout<Float>.size ? Int(frameCount) : byteCount / MemoryLayout<Float>.size
+            floatChannelData[0].assign(from: source, count: count)
         } else if let int16ChannelData = pcmBuffer.int16ChannelData {
             let source = audioBufferList.mBuffers.mData!.assumingMemoryBound(to: Int16.self)
-            int16ChannelData[0].assign(from: source, count: min(Int(frameCount), byteCount / MemoryLayout<Int16>.size))
+            let count = Int(frameCount) < byteCount / MemoryLayout<Int16>.size ? Int(frameCount) : byteCount / MemoryLayout<Int16>.size
+            int16ChannelData[0].assign(from: source, count: count)
         } else {
             return nil
         }

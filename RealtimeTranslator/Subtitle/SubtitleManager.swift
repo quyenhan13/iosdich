@@ -187,14 +187,14 @@ final class SubtitleManager: ObservableObject {
     }
 
     private func pullBroadcastSubtitle() {
-        guard let groupDefaults else { return }
+        guard let defaults = groupDefaults else { return }
 
-        let timestamp = groupDefaults.double(forKey: "broadcast_current_translation_at")
+        let timestamp = defaults.double(forKey: "broadcast_current_translation_at")
         guard timestamp > lastBroadcastTimestamp else { return }
 
-        let original = groupDefaults.string(forKey: "broadcast_current_original")?
+        let original = defaults.string(forKey: "broadcast_current_original")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let translation = groupDefaults.string(forKey: "broadcast_current_translation")?
+        let translation = defaults.string(forKey: "broadcast_current_translation")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         
         guard !translation.isEmpty || !original.isEmpty else { return }
