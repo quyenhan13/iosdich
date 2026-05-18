@@ -5,13 +5,16 @@ struct SubtitleOverlayView: View {
     let text: String
     let translation: String
     
+    private var style: SubtitleStyle {
+        SubtitleStyle(rawValue: settings.overlayStyle) ?? .classic
+    }
+    
     var body: some View {
-        let style = SubtitleStyle(rawValue: settings.overlayStyle) ?? .classic
-        
         VStack(spacing: 8) {
             if !text.isEmpty {
                 Text(text)
-                    .font(style.font.italic())
+                    .font(style.font)
+                    .italic()
                     .foregroundColor(style.foregroundColor.opacity(0.75))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
