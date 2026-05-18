@@ -7,6 +7,7 @@ final class AppSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(sourceLanguage, forKey: "source_language")
             groupDefaults?.set(sourceLanguage, forKey: "source_language")
+            groupDefaults?.synchronize()
         }
     }
     
@@ -14,6 +15,7 @@ final class AppSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(targetLanguage, forKey: "target_language")
             groupDefaults?.set(targetLanguage, forKey: "target_language")
+            groupDefaults?.synchronize()
         }
     }
     
@@ -27,6 +29,7 @@ final class AppSettings: ObservableObject {
         self.sourceLanguage = UserDefaults.standard.string(forKey: "source_language") ?? "auto"
         self.targetLanguage = UserDefaults.standard.string(forKey: "target_language") ?? "vi"
         self.overlayStyle = UserDefaults.standard.string(forKey: "overlay_style") ?? "Classic"
+        _ = syncSharedSettings()
     }
     
     var apiKey: String {
@@ -42,12 +45,35 @@ final class AppSettings: ObservableObject {
 
     @discardableResult
     func saveAPIKey(_ value: String) -> Bool {
-        UserDefaults.standard.set(value, forKey: "soniox_api_key_fallback")
-        groupDefaults?.set(value, forKey: "soniox_api_key_fallback")
-        groupDefaults?.set(sourceLanguage, forKey: "source_language")
-        groupDefaults?.set(targetLanguage, forKey: "target_language")
-        let savedToKeychain = KeychainStore.shared.save(value, forKey: "soniox_api_key")
+        let cleanedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(cleanedValue, forKey: "soniox_api_key_fallback")
+        groupDefaults?.set(cleanedValue, forKey: "soniox_api_key_fallback")
+        let savedToKeychain = KeychainStore.shared.save(cleanedValue, forKey: "soniox_api_key")
+        _ = syncSharedSettings()
         Logger.log(savedToKeychain ? "Đã lưu API Key vào Keychain." : "Keychain lỗi, đã lưu API Key vào UserDefaults fallback.")
         return savedToKeychain
+    }
+
+    @discardableResult
+    func syncSharedSettings() -> Bool {
+        let key = (
+            KeychainStore.shared.load(forKey: "soniox_api_key")
+            ?? UserDefaults.standard.string(forKey: "soniox_api_key_fallback")
+            ?? groupDefaults?.string(forKey: "soniox_api_key_fallback")
+            ?? ""
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !key.isEmpty {
+            UserDefaults.standard.set(key, forKey: "soniox_api_key_fallback")
+            groupDefaults?.set(key, forKey: "soniox_api_key_fallback")
+        }
+
+        UserDefaults.standard.set(sourceLanguage, forKey: "source_language")
+        UserDefaults.standard.set(targetLanguage, forKey: "target_language")
+        groupDefaults?.set(sourceLanguage, forKey: "source_language")
+        groupDefaults?.set(targetLanguage, forKey: "target_language")
+        UserDefaults.standard.synchronize()
+        groupDefaults?.synchronize()
+        return !key.isEmpty
     }
 }

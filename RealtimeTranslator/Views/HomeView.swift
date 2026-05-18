@@ -31,6 +31,7 @@ struct HomeView: View {
         }
         .accentColor(.white)
         .onAppear {
+            _ = settings.syncSharedSettings()
             subtitleManager.startBroadcastSubtitleSync()
             Task {
                 await autoUpdateManager.checkForUpdates(silent: true)
@@ -285,6 +286,12 @@ struct HomeView: View {
     private func startBroadcastMode() {
         if floatingOverlay.isRunning {
             floatingOverlay.stop()
+            return
+        }
+
+        guard settings.syncSharedSettings() else {
+            alertMessage = "Vui l\u{00F2}ng v\u{00E0}o C\u{00E0}i \u{0111}\u{1EB7}t v\u{00E0} l\u{01B0}u Soniox API Key tr\u{01B0}\u{1EDB}c khi b\u{1EAD}t Broadcast."
+            showAlert = true
             return
         }
 
