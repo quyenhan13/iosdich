@@ -38,14 +38,6 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             clean build
 
-      - name: Đóng gói Unsigned IPA
-        run: |
-          mkdir -p Payload
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Release-iphoneos/*.app" -type d | head -n 1)
-          echo "Tìm thấy đường dẫn app: $APP_PATH"
-          cp -R "$APP_PATH" Payload/
-          zip -r RealtimeTranslator-unsigned.ipa Payload
-
       - name: Đóng gói TrollStore IPA
         run: |
           set -e
@@ -60,12 +52,6 @@ jobs:
           ldid -SRealtimeTranslator/TrollStore.entitlements "$APP_COPY/$EXECUTABLE"
           ldid -e "$APP_COPY/$EXECUTABLE"
           zip -r RealtimeTranslator-trollstore.ipa Payload
-
-      - name: Upload Artifact File IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: RealtimeTranslator-unsigned-ipa
-          path: RealtimeTranslator-unsigned.ipa
 
       - name: Upload TrollStore IPA
         uses: actions/upload-artifact@v4
