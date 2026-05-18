@@ -37,7 +37,6 @@ struct HomeView: View {
         }
         .accentColor(.white)
         .onAppear(perform: setupCallbacks)
-        .onDisappear(perform: stopAll)
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Lỗi xảy ra"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
@@ -46,6 +45,15 @@ struct HomeView: View {
     private var miniListeningView: some View {
         VStack {
             Spacer()
+
+            if !subtitleManager.currentTranslatedText.isEmpty || !subtitleManager.currentText.isEmpty {
+                SubtitleOverlayView(
+                    text: subtitleManager.currentText,
+                    translation: subtitleManager.currentTranslatedText
+                )
+                .padding(.horizontal, 18)
+                .padding(.bottom, 16)
+            }
 
             HStack {
                 Spacer()

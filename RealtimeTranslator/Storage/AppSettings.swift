@@ -16,7 +16,7 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
-        self.sourceLanguage = UserDefaults.standard.string(forKey: "source_language") ?? "en"
+        self.sourceLanguage = UserDefaults.standard.string(forKey: "source_language") ?? "auto"
         self.targetLanguage = UserDefaults.standard.string(forKey: "target_language") ?? "vi"
         self.overlayStyle = UserDefaults.standard.string(forKey: "overlay_style") ?? "Classic"
     }
