@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
@@ -62,24 +63,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Soniox API Key")
                     .formLabel()
-                HStack(spacing: 8) {
-                    TextField("Dan Soniox API Key...", text: $apiKeyInput)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-                    .keyboardType(.asciiCapable)
-                    .foregroundColor(.white)
-
-                    PasteButton(payloadType: String.self) { values in
-                        pasteKey(values.first ?? "")
-                    }
-                    .buttonBorderShape(.capsule)
-                    .tint(TransifyrTheme.accent)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 11)
-                .background(TransifyrTheme.input)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(TransifyrTheme.borderLight, lineWidth: 1))
+                APIKeyTextView(text: $apiKeyInput)
+                    .frame(height: 92)
+                    .background(TransifyrTheme.input)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(TransifyrTheme.borderLight, lineWidth: 1))
+                Text("Da nhap \(cleanAPIKey(apiKeyInput).count) ky tu")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(TransifyrTheme.textSecondary)
                 Button(action: saveKey) {
                     HStack {
                         Image(systemName: "key.fill")
@@ -181,22 +172,56 @@ struct SettingsView: View {
         showAlert = true
     }
 
-    private func pasteKey(_ pasted: String) {
-        let cleanedKey = cleanAPIKey(pasted)
-        guard !cleanedKey.isEmpty else {
-            alertMessage = "Clipboard khong co API Key de dan."
-            showAlert = true
-            return
-        }
-
-        apiKeyInput = cleanedKey
-    }
-
     private func cleanAPIKey(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\n", with: "")
             .replacingOccurrences(of: "\r", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct APIKeyTextView: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.textColor = .white
+        view.tintColor = .white
+        view.font = .monospacedSystemFont(ofSize: 14, weight: .medium)
+        view.autocapitalizationType = .none
+        view.autocorrectionType = .no
+        view.spellCheckingType = .no
+        view.smartDashesType = .no
+        view.smartQuotesType = .no
+        view.smartInsertDeleteType = .no
+        view.keyboardType = .asciiCapable
+        view.returnKeyType = .done
+        view.textContainerInset = UIEdgeInsets(top: 11, left: 8, bottom: 11, right: 8)
+        return view
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            text = textView.text
+        }
     }
 }
 
