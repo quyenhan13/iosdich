@@ -9,6 +9,7 @@ final class AppSettings: ObservableObject {
             UserDefaults.standard.set(sourceLanguage, forKey: "source_language")
             groupDefaults?.set(sourceLanguage, forKey: "source_language")
             groupDefaults?.synchronize()
+            _ = syncSharedSettings()
         }
     }
     
@@ -17,6 +18,7 @@ final class AppSettings: ObservableObject {
             UserDefaults.standard.set(targetLanguage, forKey: "target_language")
             groupDefaults?.set(targetLanguage, forKey: "target_language")
             groupDefaults?.synchronize()
+            _ = syncSharedSettings()
         }
     }
     
@@ -29,6 +31,7 @@ final class AppSettings: ObservableObject {
             UserDefaults.standard.set(showOriginalSubtitle, forKey: "show_original_subtitle")
             groupDefaults?.set(showOriginalSubtitle, forKey: "show_original_subtitle")
             groupDefaults?.synchronize()
+            _ = syncSharedSettings()
         }
     }
 
