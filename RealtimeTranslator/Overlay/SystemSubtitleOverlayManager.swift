@@ -11,9 +11,12 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private var pipController: AVPictureInPictureController?
     private var frameTimer: Timer?
     private var currentText = ""
+    private var lastRenderedText = ""
+    private var lastRenderSize = CGSize.zero
+    private var scrollOffset: CGFloat = 0
+    private var hideTextAt: Date?
     private var frameIndex: Int64 = 0
-    private let frameRate: Int32 = 2
-    private let renderSize = CGSize(width: 960, height: 360)
+    private let frameRate: Int32 = 24
 
     override init() {
         super.init()
@@ -56,6 +59,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     func update(text: String, translation: String) {
         let next = translation.isEmpty ? text : translation
         currentText = next.trimmingCharacters(in: .whitespacesAndNewlines)
+        hideTextAt = currentText.isEmpty ? nil : Date().addingTimeInterval(6)
         enqueueFrame(force: true)
     }
 
@@ -64,11 +68,15 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / Double(frameRate), repeats: true) { [weak self] _ in
             self?.enqueueFrame(force: false)
         }
-        frameTimer?.tolerance = 0.08
+        frameTimer?.tolerance = 0.01
     }
 
     private func enqueueFrame(force: Bool) {
         guard force || pipController?.isPictureInPictureActive == true else { return }
+        if let hideTextAt, Date() >= hideTextAt {
+            currentText = ""
+            self.hideTextAt = nil
+        }
         guard let buffer = makeSampleBuffer(text: currentText) else { return }
         if displayLayer.status == .failed {
             displayLayer.flush()
@@ -117,6 +125,13 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     }
 
     private func makePixelBuffer(text: String) -> CVPixelBuffer? {
+        let renderSize = currentRenderSize()
+        if renderSize != lastRenderSize {
+            lastRenderSize = renderSize
+            scrollOffset = 0
+            lastRenderedText = ""
+        }
+
         var pixelBuffer: CVPixelBuffer?
         let attrs: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
@@ -152,32 +167,78 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         UIColor.clear.setFill()
         UIBezierPath(rect: CGRect(origin: .zero, size: renderSize)).fill()
 
-        let bubbleRect = CGRect(x: 42, y: 118, width: renderSize.width - 84, height: 156)
-        UIColor.black.withAlphaComponent(text.isEmpty ? 0.28 : 0.68).setFill()
-        UIBezierPath(roundedRect: bubbleRect, cornerRadius: 34).fill()
+        let displayText = compactSubtitle(text)
+        guard !displayText.isEmpty else {
+            UIGraphicsPopContext()
+            return pixelBuffer
+        }
 
-        let displayText = text.isEmpty ? "Transifyr đang nghe..." : text
+        let tickerRect = CGRect(x: 10, y: 10, width: renderSize.width - 20, height: renderSize.height - 20)
+        UIColor.black.withAlphaComponent(0.82).setFill()
+        UIBezierPath(roundedRect: tickerRect, cornerRadius: tickerRect.height / 2).fill()
+
+        UIColor.white.withAlphaComponent(0.08).setStroke()
+        let border = UIBezierPath(roundedRect: tickerRect.insetBy(dx: 1, dy: 1), cornerRadius: (tickerRect.height - 2) / 2)
+        border.lineWidth = 1
+        border.stroke()
+
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byWordWrapping
+        paragraph.alignment = .left
+        paragraph.lineBreakMode = .byClipping
 
         let textAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: text.isEmpty ? 34 : 42, weight: .bold),
+            .font: UIFont.systemFont(ofSize: renderSize.width > 700 ? 38 : 30, weight: .heavy),
             .foregroundColor: UIColor.white,
             .paragraphStyle: paragraph,
-            .strokeColor: UIColor.black.withAlphaComponent(0.65),
-            .strokeWidth: -3
+            .strokeColor: UIColor.black,
+            .strokeWidth: -4
         ]
 
-        NSString(string: displayText).draw(
-            with: bubbleRect.insetBy(dx: 28, dy: 26),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: textAttrs,
-            context: nil
-        )
+        let nsText = NSString(string: displayText)
+        let textSize = nsText.size(withAttributes: textAttrs)
+        let contentRect = tickerRect.insetBy(dx: 26, dy: 10)
+        let y = contentRect.midY - textSize.height / 2
+
+        if displayText != lastRenderedText {
+            lastRenderedText = displayText
+            scrollOffset = contentRect.width
+        }
+
+        let x: CGFloat
+        if textSize.width > contentRect.width {
+            scrollOffset -= 2.8
+            if scrollOffset < -textSize.width - 80 {
+                scrollOffset = contentRect.width
+            }
+            x = contentRect.minX + scrollOffset
+        } else {
+            x = contentRect.midX - textSize.width / 2
+        }
+
+        context.saveGState()
+        context.clip(to: contentRect)
+        nsText.draw(at: CGPoint(x: x, y: y), withAttributes: textAttrs)
+        context.restoreGState()
         UIGraphicsPopContext()
 
         return pixelBuffer
+    }
+
+    private func compactSubtitle(_ text: String, limit: Int = 220) -> String {
+        let normalized = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > limit else { return normalized }
+        return String(normalized.suffix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func currentRenderSize() -> CGSize {
+        let screenBounds = UIScreen.main.bounds
+        let isLandscape = screenBounds.width > screenBounds.height
+        let scale = UIScreen.main.scale
+        let screenWidth = max(screenBounds.width, screenBounds.height)
+        let portraitWidth = min(max(min(screenBounds.width, screenBounds.height) * scale * 0.72, 300), 420)
+        let landscapeWidth = min(max(screenWidth * scale * 0.54, 520), 760)
+        return CGSize(width: isLandscape ? landscapeWidth : portraitWidth, height: isLandscape ? 78 : 68)
     }
 }
 

@@ -4,14 +4,14 @@ struct HomeView: View {
     @ObservedObject var settings = AppSettings.shared
     @StateObject private var autoUpdateManager = AutoUpdateManager.shared
     @StateObject private var subtitleManager = SubtitleManager()
-    @StateObject private var systemOverlay = SystemSubtitleOverlayManager()
+    @StateObject private var floatingOverlay = FloatingTranslationOverlayManager.shared
 
     @State private var alertMessage = ""
     @State private var showAlert = false
 
     var body: some View {
         NavigationView {
-            ZStack {
+            ZStack(alignment: .bottom) {
                 TransifyrBackground()
 
                 VStack(spacing: 14) {
@@ -40,10 +40,10 @@ struct HomeView: View {
             subtitleManager.stopBroadcastSubtitleSync()
         }
         .onChange(of: subtitleManager.currentTranslatedText) { _ in
-            systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
+            floatingOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
         }
         .onChange(of: subtitleManager.currentText) { _ in
-            systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
+            floatingOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
         }
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Thông báo"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
@@ -66,16 +66,16 @@ struct HomeView: View {
         VStack(spacing: 14) {
             Button(action: startBroadcastMode) {
                 HStack(spacing: 10) {
-                    Image(systemName: systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
-                    Text(systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
+                    Image(systemName: floatingOverlay.isRunning ? "stop.fill" : "record.circle.fill")
+                    Text(floatingOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
                 }
                 .font(.system(size: 17, weight: .bold))
                 .foregroundColor(.white)
                 .padding(.horizontal, 30)
                 .padding(.vertical, 15)
-                .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
+                .background(floatingOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
                 .clipShape(Capsule())
-                .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 18, y: 8)
+                .shadow(color: (floatingOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 18, y: 8)
             }
         }
         .frame(height: 100)
@@ -111,10 +111,10 @@ struct HomeView: View {
 
             HStack(spacing: 7) {
                 Circle()
-                    .fill(systemOverlay.isRunning ? Color.green : TransifyrTheme.textSecondary)
+                    .fill(floatingOverlay.isRunning ? Color.green : TransifyrTheme.textSecondary)
                     .frame(width: 8, height: 8)
-                    .shadow(color: (systemOverlay.isRunning ? Color.green : TransifyrTheme.textSecondary).opacity(0.8), radius: 6)
-                Text(systemOverlay.isRunning ? "Phụ đề nổi" : "Sẵn sàng")
+                    .shadow(color: (floatingOverlay.isRunning ? Color.green : TransifyrTheme.textSecondary).opacity(0.8), radius: 6)
+                Text(floatingOverlay.isRunning ? "Dịch nổi" : "Sẵn sàng")
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
             }
@@ -162,17 +162,15 @@ struct HomeView: View {
 
             Spacer()
 
-            Button(action: toggleSystemOverlay) {
-                Image(systemName: systemOverlay.isRunning ? "pip.exit" : "pip")
+            Button(action: toggleFloatingOverlay) {
+                Image(systemName: floatingOverlay.isRunning ? "rectangle.slash" : "text.bubble.fill")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: 42, height: 42)
-                    .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
+                    .background(floatingOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
             }
-            .disabled(!systemOverlay.isSupported)
-            .opacity(systemOverlay.isSupported ? 1 : 0.45)
         }
         .padding(12)
         .background(TransifyrTheme.input.opacity(0.7))
@@ -280,17 +278,17 @@ struct HomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 9))
     }
 
-    private func toggleSystemOverlay() {
-        systemOverlay.isRunning ? systemOverlay.stop() : systemOverlay.start()
+    private func toggleFloatingOverlay() {
+        floatingOverlay.isRunning ? floatingOverlay.stop() : floatingOverlay.start()
     }
 
     private func startBroadcastMode() {
-        if systemOverlay.isRunning {
-            systemOverlay.stop()
+        if floatingOverlay.isRunning {
+            floatingOverlay.stop()
             return
         }
 
-        systemOverlay.start()
+        floatingOverlay.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)
         }
