@@ -2,6 +2,7 @@ import Foundation
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    private static let appGroupID = "group.com.vteen.RealtimeTranslator"
     
     @Published var sourceLanguage: String {
         didSet {
@@ -23,7 +24,7 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(overlayStyle, forKey: "overlay_style") }
     }
 
-    private let groupDefaults = UserDefaults(suiteName: "group.com.vteen.RealtimeTranslator")
+    private let groupDefaults = UserDefaults(suiteName: appGroupID)
 
     private init() {
         self.sourceLanguage = UserDefaults.standard.string(forKey: "source_language") ?? "auto"
@@ -34,9 +35,11 @@ final class AppSettings: ObservableObject {
     
     var apiKey: String {
         get {
-            KeychainStore.shared.load(forKey: "soniox_api_key")
-                ?? UserDefaults.standard.string(forKey: "soniox_api_key_fallback")
-                ?? ""
+            firstNonEmpty(
+                KeychainStore.shared.load(forKey: "soniox_api_key"),
+                UserDefaults.standard.string(forKey: "soniox_api_key_fallback"),
+                groupDefaults?.string(forKey: "soniox_api_key_fallback")
+            ) ?? ""
         }
         set {
             _ = saveAPIKey(newValue)
@@ -56,12 +59,11 @@ final class AppSettings: ObservableObject {
 
     @discardableResult
     func syncSharedSettings() -> Bool {
-        let key = (
-            KeychainStore.shared.load(forKey: "soniox_api_key")
-            ?? UserDefaults.standard.string(forKey: "soniox_api_key_fallback")
-            ?? groupDefaults?.string(forKey: "soniox_api_key_fallback")
-            ?? ""
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = firstNonEmpty(
+            KeychainStore.shared.load(forKey: "soniox_api_key"),
+            UserDefaults.standard.string(forKey: "soniox_api_key_fallback"),
+            groupDefaults?.string(forKey: "soniox_api_key_fallback")
+        ) ?? ""
 
         if !key.isEmpty {
             UserDefaults.standard.set(key, forKey: "soniox_api_key_fallback")
@@ -74,6 +76,33 @@ final class AppSettings: ObservableObject {
         groupDefaults?.set(targetLanguage, forKey: "target_language")
         UserDefaults.standard.synchronize()
         groupDefaults?.synchronize()
+        writeSharedSettingsFile(apiKey: key)
         return !key.isEmpty
+    }
+
+    private func firstNonEmpty(_ values: String?...) -> String? {
+        values
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    private func writeSharedSettingsFile(apiKey: String) {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID) else {
+            Logger.log("Khong mo duoc App Group container de ghi shared settings.")
+            return
+        }
+
+        let payload: [String: String] = [
+            "soniox_api_key_fallback": apiKey,
+            "source_language": sourceLanguage,
+            "target_language": targetLanguage
+        ]
+
+        do {
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+            try data.write(to: containerURL.appendingPathComponent("transifyr_shared_settings.json"), options: .atomic)
+        } catch {
+            Logger.log("Khong ghi duoc shared settings file: \(error.localizedDescription)")
+        }
     }
 }

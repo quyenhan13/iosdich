@@ -3,14 +3,25 @@ import CoreMedia
 import ReplayKit
 
 final class SampleHandler: RPBroadcastSampleHandler {
+    private static let appGroupID = "group.com.vteen.RealtimeTranslator"
     private let client = BroadcastSonioxClient()
     private let converter = BroadcastPCMConverter()
-    private let defaults = UserDefaults(suiteName: "group.com.vteen.RealtimeTranslator")
+    private let defaults = UserDefaults(suiteName: appGroupID)
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
-        let apiKey = defaults?.string(forKey: "soniox_api_key_fallback") ?? ""
-        let sourceLang = defaults?.string(forKey: "source_language") ?? "auto"
-        let targetLang = defaults?.string(forKey: "target_language") ?? "vi"
+        let sharedSettings = loadSharedSettingsFile()
+        let apiKey = firstNonEmpty(
+            defaults?.string(forKey: "soniox_api_key_fallback"),
+            sharedSettings["soniox_api_key_fallback"]
+        ) ?? ""
+        let sourceLang = firstNonEmpty(
+            defaults?.string(forKey: "source_language"),
+            sharedSettings["source_language"]
+        ) ?? "auto"
+        let targetLang = firstNonEmpty(
+            defaults?.string(forKey: "target_language"),
+            sharedSettings["target_language"]
+        ) ?? "vi"
 
         guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             finishBroadcastWithError(NSError(domain: "TransifyrBroadcast", code: 1, userInfo: [
@@ -24,6 +35,25 @@ final class SampleHandler: RPBroadcastSampleHandler {
             self?.defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
         }
         client.connect(apiKey: apiKey, sourceLang: sourceLang, targetLang: targetLang)
+    }
+
+    private func firstNonEmpty(_ values: String?...) -> String? {
+        values
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    private func loadSharedSettingsFile() -> [String: String] {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID) else {
+            return [:]
+        }
+
+        let fileURL = containerURL.appendingPathComponent("transifyr_shared_settings.json")
+        guard let data = try? Data(contentsOf: fileURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return [:]
+        }
+        return json
     }
 
     override func broadcastFinished() {
