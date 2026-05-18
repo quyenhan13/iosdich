@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct HomeView: View {
     @ObservedObject var settings = AppSettings.shared
@@ -13,6 +14,12 @@ struct HomeView: View {
         NavigationView {
             ZStack(alignment: .bottom) {
                 TransifyrBackground()
+
+                // Render displayLayer in the view hierarchy to support Picture-in-Picture background activation
+                SystemOverlayLayerView(displayLayer: systemOverlay.displayLayer)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
+                    .allowsHitTesting(false)
 
                 VStack(spacing: 14) {
                     header
@@ -347,4 +354,24 @@ enum TransifyrTheme {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+}
+
+struct SystemOverlayLayerView: UIViewRepresentable {
+    let displayLayer: AVSampleBufferDisplayLayer
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        
+        displayLayer.frame = view.bounds
+        view.layer.addSublayer(displayLayer)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        displayLayer.frame = uiView.bounds
+        CATransaction.commit()
+    }
 }

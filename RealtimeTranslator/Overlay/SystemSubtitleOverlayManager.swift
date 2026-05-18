@@ -7,7 +7,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     @Published var isRunning = false
     @Published var isSupported = AVPictureInPictureController.isPictureInPictureSupported()
 
-    private let displayLayer = AVSampleBufferDisplayLayer()
+    let displayLayer = AVSampleBufferDisplayLayer()
     private var pipController: AVPictureInPictureController?
     private var frameTimer: Timer?
     private var currentText = ""
