@@ -190,14 +190,14 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         let nsText = NSString(string: displayText)
         let maxTextWidth = renderSize.width - 60
         let boundingBox = nsText.boundingRect(
-            with: CGSize(width: maxTextWidth, height: CGFloat.greatestMagnitude),
+            with: CGSize(width: maxTextWidth, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: textAttrs,
             context: nil
         )
 
-        let textWidth = boundingBox.width.rounded(.up)
-        let textHeight = boundingBox.height.rounded(.up)
+        let textWidth = CGFloat(ceil(Double(boundingBox.width)))
+        let textHeight = CGFloat(ceil(Double(boundingBox.height)))
 
         // Hộp đen mờ bo tròn ôm sát nội dung chữ (Padding ngang 40, dọc 20) - Dùng toán tử ba ngôi loại bỏ hoàn toàn cảnh báo/lỗi phân giải kiểu dữ liệu
         let boxWidth = textWidth + 40 < renderSize.width - 20 ? textWidth + 40 : renderSize.width - 20
