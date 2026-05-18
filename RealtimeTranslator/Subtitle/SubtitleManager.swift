@@ -6,8 +6,22 @@ final class SubtitleManager: ObservableObject {
     @Published var historyLines: [SubtitleLine] = []
     
     private var silenceTimer: Timer?
+    private var confirmedOriginal = ""
+    private var confirmedTranslation = ""
+    private var activeOriginalSentence = ""
+    private var activeTranslationSentence = ""
 
     func handleSonioxResponse(_ response: SonioxResponse) {
+        if let message = response.errorMessage ?? response.error {
+            Logger.log("Soniox lỗi: \(message)", level: .error)
+            return
+        }
+
+        if let tokens = response.tokens, !tokens.isEmpty {
+            handleSonioxTokens(tokens)
+            return
+        }
+
         guard let words = response.words, !words.isEmpty else { return }
         
         resetSilenceTimer()
@@ -41,6 +55,104 @@ final class SubtitleManager: ObservableObject {
             self.currentTranslatedText = ""
             self.historyLines.removeAll()
         }
+        confirmedOriginal = ""
+        confirmedTranslation = ""
+        activeOriginalSentence = ""
+        activeTranslationSentence = ""
+    }
+
+    private func handleSonioxTokens(_ tokens: [SonioxToken]) {
+        resetSilenceTimer()
+
+        var committedOriginal = ""
+        var committedTranslation = ""
+        var provisionalOriginal = ""
+        var provisionalTranslation = ""
+
+        for token in tokens {
+            let text = token.text ?? ""
+            guard !text.isEmpty, text != "<end>" else { continue }
+
+            if token.isTranslation {
+                if token.isCommitted {
+                    committedTranslation += text
+                } else {
+                    provisionalTranslation += text
+                }
+            } else {
+                if token.isCommitted {
+                    committedOriginal += text
+                } else {
+                    provisionalOriginal += text
+                }
+            }
+        }
+
+        if !committedOriginal.isEmpty {
+            confirmedOriginal = appendUniqueText(confirmedOriginal, committedOriginal)
+            activeOriginalSentence += committedOriginal
+        }
+
+        if !committedTranslation.isEmpty {
+            confirmedTranslation = appendUniqueText(confirmedTranslation, committedTranslation)
+            activeTranslationSentence += committedTranslation
+        }
+
+        let displayOriginal = trimSubtitleBuffer(confirmedOriginal + provisionalOriginal)
+        let displayTranslation = trimSubtitleBuffer(confirmedTranslation + provisionalTranslation)
+
+        DispatchQueue.main.async {
+            self.currentText = displayOriginal
+            self.currentTranslatedText = displayTranslation
+        }
+
+        if shouldFlushSentence(committedTranslation) {
+            flushActiveSentence()
+        }
+
+        if confirmedOriginal.count > 1800 {
+            confirmedOriginal = String(confirmedOriginal.suffix(1200))
+        }
+        if confirmedTranslation.count > 1800 {
+            confirmedTranslation = String(confirmedTranslation.suffix(1200))
+        }
+    }
+
+    private func flushActiveSentence() {
+        let original = activeOriginalSentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = activeTranslationSentence.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        activeOriginalSentence = ""
+        activeTranslationSentence = ""
+
+        guard !translation.isEmpty else { return }
+
+        DispatchQueue.main.async {
+            self.historyLines.append(SubtitleLine(text: original, textTranslated: translation, isFinal: true))
+            if self.historyLines.count > 15 {
+                self.historyLines.removeFirst()
+            }
+        }
+    }
+
+    private func shouldFlushSentence(_ text: String) -> Bool {
+        text.range(of: #"[.!?。！？]\s*$"#, options: .regularExpression) != nil
+    }
+
+    private func appendUniqueText(_ base: String, _ addition: String) -> String {
+        let cleanAddition = addition.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        guard !cleanAddition.isEmpty else { return base }
+        if base.hasSuffix(cleanAddition) {
+            return base
+        }
+        return base + cleanAddition
+    }
+
+    private func trimSubtitleBuffer(_ text: String, maxChars: Int = 140) -> String {
+        let normalized = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > maxChars else { return normalized }
+        return String(normalized.suffix(maxChars)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func resetSilenceTimer() {

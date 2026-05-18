@@ -6,6 +6,10 @@ struct SonioxConfig: Codable {
     let audioFormat: String
     let sampleRate: Int
     let numChannels: Int
+    let enableEndpointDetection: Bool
+    let enableLanguageIdentification: Bool
+    let maxEndpointDelayMs: Int
+    let languageHints: [String]?
     let translation: TranslationConfig?
 
     enum CodingKeys: String, CodingKey {
@@ -14,6 +18,10 @@ struct SonioxConfig: Codable {
         case audioFormat = "audio_format"
         case sampleRate = "sample_rate"
         case numChannels = "num_channels"
+        case enableEndpointDetection = "enable_endpoint_detection"
+        case enableLanguageIdentification = "enable_language_identification"
+        case maxEndpointDelayMs = "max_endpoint_delay_ms"
+        case languageHints = "language_hints"
         case translation
     }
 }

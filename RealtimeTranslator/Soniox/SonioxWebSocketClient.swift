@@ -41,7 +41,7 @@ final class SonioxWebSocketClient: ObservableObject {
             self.connectionState = .connecting
         }
         
-        let url = URL(string: "wss://stt-rt.soniox.com")!
+        let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
         var request = URLRequest(url: url)
         request.timeoutInterval = 10.0
         
@@ -77,6 +77,7 @@ final class SonioxWebSocketClient: ObservableObject {
     private func sendConfig(apiKey: String, sourceLang: String, targetLang: String) {
         let modelName = "stt-rt-v4"
         
+        let sourceCode = sourceLang == "auto" ? nil : sourceLang
         let translation = TranslationConfig(type: "one_way", targetLanguage: targetLang)
         let config = SonioxConfig(
             apiKey: apiKey,
@@ -84,6 +85,10 @@ final class SonioxWebSocketClient: ObservableObject {
             audioFormat: "pcm_s16le",
             sampleRate: 16000,
             numChannels: 1,
+            enableEndpointDetection: true,
+            enableLanguageIdentification: sourceCode == nil,
+            maxEndpointDelayMs: 160,
+            languageHints: sourceCode.map { [$0] },
             translation: translation
         )
         
