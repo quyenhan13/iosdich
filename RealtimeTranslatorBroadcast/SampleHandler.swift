@@ -192,6 +192,11 @@ private final class BroadcastSonioxClient {
         if !cleanTranslation.isEmpty || !cleanOriginal.isEmpty {
             onTranslation?(cleanOriginal, cleanTranslation)
         }
+
+        // Khi Soniox kết thúc segment (<end>), gửi tín hiệu reset để SubtitleManager xóa màn hình
+        if shouldEndSegment {
+            onTranslation?("", "")
+        }
     }
 
     private func shouldFlushSentence(_ text: String) -> Bool {

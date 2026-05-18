@@ -177,16 +177,29 @@ final class SubtitleManager: ObservableObject {
 
         let timestamp = defaults.double(forKey: "broadcast_current_translation_at")
         guard timestamp > lastBroadcastTimestamp else { return }
+        lastBroadcastTimestamp = timestamp
 
         let original = defaults.string(forKey: "broadcast_current_original")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let translation = defaults.string(forKey: "broadcast_current_translation")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        
-        guard !translation.isEmpty || !original.isEmpty else { return }
 
-        lastBroadcastTimestamp = timestamp
         resetSilenceTimer()
+
+        // Tín hiệu segment end: cả hai đều rỗng → đưa câu hiện tại vào lịch sử rồi xóa màn hình
+        if original.isEmpty && translation.isEmpty {
+            let prevOriginal = currentText
+            let prevTranslation = currentTranslatedText
+            if !prevTranslation.isEmpty {
+                DispatchQueue.main.async {
+                    self.historyLines.append(SubtitleLine(text: prevOriginal, textTranslated: prevTranslation, isFinal: true))
+                    if self.historyLines.count > 15 { self.historyLines.removeFirst() }
+                    self.currentText = ""
+                    self.currentTranslatedText = ""
+                }
+            }
+            return
+        }
 
         DispatchQueue.main.async {
             self.currentText = self.trimSubtitleBuffer(original)
