@@ -267,6 +267,13 @@ extension SystemSubtitleOverlayManager: AVPictureInPictureControllerDelegate {
             self.isRunning = false
         }
     }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        Logger.log("PiP failed to start: \(error.localizedDescription)", level: .error)
+        DispatchQueue.main.async {
+            self.isRunning = false
+        }
+    }
 }
 
 extension SystemSubtitleOverlayManager: AVPictureInPictureSampleBufferPlaybackDelegate {

@@ -13,13 +13,14 @@ struct HomeView: View {
     var body: some View {
         NavigationView {
             ZStack(alignment: .bottom) {
-                TransifyrBackground()
-
-                // Render displayLayer in the view hierarchy to support Picture-in-Picture background activation
+                // Render displayLayer in the view hierarchy to support Picture-in-Picture background activation.
+                // We draw it at a valid size and with full opacity, but put it BEHIND the solid background
+                // so it is completely hidden from the user while iOS considers it fully active.
                 SystemOverlayLayerView(displayLayer: systemOverlay.displayLayer)
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
+                    .frame(width: 320, height: 140)
                     .allowsHitTesting(false)
+
+                TransifyrBackground()
 
                 VStack(spacing: 14) {
                     header
@@ -71,19 +72,33 @@ struct HomeView: View {
     }
 
     private var listenPanel: some View {
-        VStack(spacing: 14) {
+        HStack(spacing: 14) {
             Button(action: startBroadcastMode) {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Image(systemName: systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
                     Text(systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
                 }
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
-                .padding(.horizontal, 30)
-                .padding(.vertical, 15)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
                 .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
                 .clipShape(Capsule())
-                .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 18, y: 8)
+                .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 12, y: 6)
+            }
+
+            Button(action: testOverlay) {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.rectangle.fill")
+                    Text("Test phụ đề")
+                }
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             }
         }
         .frame(height: 100)
@@ -288,6 +303,17 @@ struct HomeView: View {
 
     private func toggleFloatingOverlay() {
         systemOverlay.isRunning ? systemOverlay.stop() : systemOverlay.start()
+    }
+
+    private func testOverlay() {
+        if !systemOverlay.isRunning {
+            systemOverlay.start()
+        }
+        // Gửi nội dung test phụ đề ngay lập tức
+        systemOverlay.update(
+            text: "Hello! This is a real-time subtitle translation test overlay.",
+            translation: "Xin chào! Đây là phụ đề dịch thuật thời gian thực thử nghiệm."
+        )
     }
 
     private func startBroadcastMode() {
