@@ -314,7 +314,6 @@ struct HomeView: View {
         wsClient.onError = { errorStr in
             self.alertMessage = "Soniox WebSocket lỗi: \(errorStr)"
             self.showAlert = true
-            self.stopAll()
         }
     }
 

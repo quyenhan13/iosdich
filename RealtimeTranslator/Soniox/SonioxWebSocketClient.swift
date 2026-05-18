@@ -28,14 +28,31 @@ final class SonioxWebSocketClient: ObservableObject {
     @Published var connectionState: ConnectionState = .disconnected
     
     private var webSocketTask: URLSessionWebSocketTask?
-    private let urlSession = URLSession(configuration: .default)
+    private let urlSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        return URLSession(configuration: configuration)
+    }()
     private let jsonEncoder = JSONEncoder()
+    private var reconnectAttempts = 0
+    private var reconnectWorkItem: DispatchWorkItem?
+    private var lastAPIKey = ""
+    private var lastSourceLang = "auto"
+    private var lastTargetLang = "vi"
+    private var manuallyDisconnected = false
     
     var onTranslationResult: ((SonioxResponse) -> Void)?
     var onError: ((String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
         guard connectionState == .disconnected else { return }
+        lastAPIKey = apiKey
+        lastSourceLang = sourceLang
+        lastTargetLang = targetLang
+        manuallyDisconnected = false
+        reconnectWorkItem?.cancel()
         
         DispatchQueue.main.async {
             self.connectionState = .connecting
@@ -55,6 +72,8 @@ final class SonioxWebSocketClient: ObservableObject {
     }
 
     func disconnect() {
+        manuallyDisconnected = true
+        reconnectWorkItem?.cancel()
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         DispatchQueue.main.async {
@@ -102,6 +121,7 @@ final class SonioxWebSocketClient: ObservableObject {
                         self?.handleError(error.localizedDescription)
                     } else {
                         Logger.log("Gửi cấu hình Soniox thành công.")
+                        self?.reconnectAttempts = 0
                         DispatchQueue.main.async {
                             self?.connectionState = .connected
                         }
@@ -140,10 +160,49 @@ final class SonioxWebSocketClient: ObservableObject {
     }
 
     private func handleError(_ errorStr: String) {
+        guard !manuallyDisconnected else { return }
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+
+        if shouldRetry(errorStr), reconnectAttempts < 6 {
+            scheduleReconnect(reason: errorStr)
+            return
+        }
+
         DispatchQueue.main.async {
             self.connectionState = .error(errorStr)
             self.onError?(errorStr)
         }
         disconnect()
+    }
+
+    private func shouldRetry(_ errorStr: String) -> Bool {
+        let normalized = errorStr.lowercased()
+        return normalized.contains("offline")
+            || normalized.contains("network")
+            || normalized.contains("timed out")
+            || normalized.contains("lost")
+            || normalized.contains("not connected")
+            || normalized.contains("cannot connect")
+    }
+
+    private func scheduleReconnect(reason: String) {
+        reconnectAttempts += 1
+        let delay = min(Double(reconnectAttempts) * 1.5, 8.0)
+        Logger.log("Soniox tạm mất kết nối (\(reason)). Thử nối lại lần \(reconnectAttempts) sau \(delay)s.")
+
+        DispatchQueue.main.async {
+            self.connectionState = .connecting
+        }
+
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self, !self.manuallyDisconnected, !self.lastAPIKey.isEmpty else { return }
+            DispatchQueue.main.async {
+                self.connectionState = .disconnected
+            }
+            self.connect(apiKey: self.lastAPIKey, sourceLang: self.lastSourceLang, targetLang: self.lastTargetLang)
+        }
+        reconnectWorkItem = item
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: item)
     }
 }
