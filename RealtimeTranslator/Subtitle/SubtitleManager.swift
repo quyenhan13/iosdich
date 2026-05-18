@@ -105,18 +105,8 @@ final class SubtitleManager: ObservableObject {
             }
         }
 
-        if !committedOriginal.isEmpty {
-            confirmedOriginal = appendUniqueText(confirmedOriginal, committedOriginal)
-            activeOriginalSentence += committedOriginal
-        }
-
-        if !committedTranslation.isEmpty {
-            confirmedTranslation = appendUniqueText(confirmedTranslation, committedTranslation)
-            activeTranslationSentence += committedTranslation
-        }
-
-        let displayOriginal = trimSubtitleBuffer(activeOriginalSentence + provisionalOriginal)
-        let displayTranslation = trimSubtitleBuffer(activeTranslationSentence + provisionalTranslation)
+        let displayOriginal = trimSubtitleBuffer(committedOriginal + provisionalOriginal)
+        let displayTranslation = trimSubtitleBuffer(committedTranslation + provisionalTranslation)
 
         DispatchQueue.main.async {
             self.currentText = displayOriginal
@@ -124,11 +114,7 @@ final class SubtitleManager: ObservableObject {
         }
 
         if shouldFlushSentence(committedTranslation) {
-            flushActiveSentence()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                self.currentText = ""
-                self.currentTranslatedText = ""
-            }
+            // Soniox handles sentence splits
         }
 
         if confirmedOriginal.count > 1800 {

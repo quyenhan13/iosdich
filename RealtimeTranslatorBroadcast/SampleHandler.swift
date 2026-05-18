@@ -179,33 +179,18 @@ private final class BroadcastSonioxClient {
         }
 
         if Date().timeIntervalSince(lastUpdateAt) > 4.5 {
-            activeTranslation = ""
-            activeOriginal = ""
-        }
-
-        if !committedTranslation.isEmpty {
-            activeTranslation = appendUniqueText(activeTranslation, committedTranslation)
             lastUpdateAt = Date()
         }
 
-        if !committedOriginal.isEmpty {
-            activeOriginal = appendUniqueText(activeOriginal, committedOriginal)
+        if !committedTranslation.isEmpty || !provisionalTranslation.isEmpty || !committedOriginal.isEmpty || !provisionalOriginal.isEmpty {
             lastUpdateAt = Date()
         }
 
-        if !provisionalTranslation.isEmpty || !provisionalOriginal.isEmpty {
-            lastUpdateAt = Date()
-        }
-
-        let cleanOriginal = trimSubtitleBuffer(activeOriginal + provisionalOriginal)
-        let cleanTranslation = trimSubtitleBuffer(activeTranslation + provisionalTranslation)
+        let cleanOriginal = trimSubtitleBuffer(committedOriginal + provisionalOriginal)
+        let cleanTranslation = trimSubtitleBuffer(committedTranslation + provisionalTranslation)
+        
         if !cleanTranslation.isEmpty || !cleanOriginal.isEmpty {
             onTranslation?(cleanOriginal, cleanTranslation)
-        }
-
-        if shouldEndSegment || shouldFlushSentence(committedTranslation) {
-            activeTranslation = ""
-            activeOriginal = ""
         }
     }
 
