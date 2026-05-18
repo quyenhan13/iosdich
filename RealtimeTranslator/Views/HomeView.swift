@@ -18,6 +18,15 @@ struct HomeView: View {
                 VStack(spacing: 14) {
                     header
                     
+                    // Live Preview của phụ đề nổi (Bắt buộc phải hiển thị để iOS cho phép PiP hoạt động mượt mà)
+                    SystemOverlayLayerView(displayLayer: systemOverlay.displayLayer)
+                        .frame(height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                        .allowsHitTesting(false)
+                        .opacity(systemOverlay.isRunning ? 1.0 : 0.01)
+
                     tabBar
                     listenPanel
                     broadcastPanel
@@ -39,14 +48,17 @@ struct HomeView: View {
                 await autoUpdateManager.checkForUpdates(silent: true)
             }
         }
+
         .onDisappear {
             subtitleManager.stopBroadcastSubtitleSync()
         }
-        .onChange(of: subtitleManager.currentTranslatedText) { _ in
-            systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
+        .onChange(of: subtitleManager.currentTranslatedText) { newValue in
+            if newValue.isEmpty && subtitleManager.currentText.isEmpty { return }
+            systemOverlay.update(text: subtitleManager.currentText, translation: newValue)
         }
-        .onChange(of: subtitleManager.currentText) { _ in
-            systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
+        .onChange(of: subtitleManager.currentText) { newValue in
+            if newValue.isEmpty && subtitleManager.currentTranslatedText.isEmpty { return }
+            systemOverlay.update(text: newValue, translation: subtitleManager.currentTranslatedText)
         }
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Thông báo"), message: Text(alertMessage), dismissButton: .default(Text("OK")))

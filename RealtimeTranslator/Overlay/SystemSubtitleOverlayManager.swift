@@ -1,152 +1,311 @@
-import Foundation
-import CoreMedia
+import AVFoundation
 import AVKit
-import Combine
-import SwiftUI
+import CoreMedia
+import UIKit
 
 final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     @Published var isRunning = false
-    @Published var isSupported = true // CAWindowServer is supported on TrollStore
+    @Published var isSupported = AVPictureInPictureController.isPictureInPictureSupported()
 
-    // Dummy layer for HomeView
     let displayLayer = AVSampleBufferDisplayLayer()
-
-    private var rootLayer: CALayer?
-    private var textLayer: CATextLayer?
-    private var bgLayer: CALayer?
-    
-    private var overlayContext: NSObject?
-    private var mainDisplay: NSObject?
-
-    private var hideTimer: Timer?
-    
-    // Background keep-alive
-    private var audioPlayer: AVAudioPlayer?
+    private var pipController: AVPictureInPictureController?
+    private var frameTimer: Timer?
+    private var currentText = ""
+    private var lastRenderSize = CGSize.zero
+    private var hideTextAt: Date?
+    private var frameIndex: Int64 = 0
+    private let frameRate: Int32 = 24
+    private var wantsPipStart = false
 
     override init() {
         super.init()
+        displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = UIColor.clear.cgColor
-        setupSilentAudio()
-    }
-    
-    private func setupSilentAudio() {
-        // Create 1 second of silence
-        let bytes: [UInt8] = [UInt8](repeating: 0, count: 44100 * 2 * 2)
-        let data = Data(bytes)
-        do {
-            audioPlayer = try AVAudioPlayer(data: data)
-            audioPlayer?.numberOfLoops = -1
-            audioPlayer?.volume = 0.01
-        } catch {
-            Logger.log("Silent audio failed", level: .error)
+
+        if #available(iOS 15.0, *) {
+            let source = AVPictureInPictureController.ContentSource(
+                sampleBufferDisplayLayer: displayLayer,
+                playbackDelegate: self
+            )
+            let controller = AVPictureInPictureController(contentSource: source)
+            controller.canStartPictureInPictureAutomaticallyFromInline = true
+            controller.delegate = self
+            pipController = controller
         }
     }
 
     func start() {
-        guard !isRunning else { return }
-        
+        guard isSupported, pipController?.isPictureInPictureActive != true else { return }
         do {
             try AudioSessionManager.configureForPlaybackOverlay()
-            audioPlayer?.play()
-        } catch { }
-
-        // CAWindowServer Setup
-        let CAWindowServer = NSClassFromString("CAWindowServer") as? NSObjectProtocol
-        guard let server = CAWindowServer?.perform(NSSelectorFromString("serverIfRunning"))?.takeUnretainedValue() as? NSObject else {
-            Logger.log("Failed to get CAWindowServer", level: .error)
-            return
-        }
-        
-        guard let displays = server.value(forKey: "displays") as? [NSObject],
-              let mainDisp = displays.first else {
-            Logger.log("Failed to get displays", level: .error)
-            return
-        }
-              
-        let CAContext = NSClassFromString("CAContext") as? NSObjectProtocol
-        let options: [String: Any] = [
-            "secure": true
-        ]
-        
-        guard let context = CAContext?.perform(NSSelectorFromString("remoteContextWithOptions:"), with: options)?.takeUnretainedValue() as? NSObject else {
-            Logger.log("Failed to create CAContext", level: .error)
-            return
-        }
-        
-        // Setup Overlay Layers
-        let screenBounds = UIScreen.main.bounds
-        let container = CALayer()
-        container.frame = CGRect(x: 0, y: screenBounds.height - 250, width: screenBounds.width, height: 160)
-        
-        let bg = CALayer()
-        bg.frame = CGRect(x: 20, y: 0, width: screenBounds.width - 40, height: 160)
-        bg.backgroundColor = UIColor.black.withAlphaComponent(0.7).cgColor
-        bg.cornerRadius = 12
-        bg.opacity = 0.0
-        container.addSublayer(bg)
-        
-        let text = CATextLayer()
-        text.frame = CGRect(x: 30, y: 15, width: screenBounds.width - 60, height: 130)
-        text.fontSize = 18
-        text.foregroundColor = UIColor.white.cgColor
-        text.alignmentMode = .center
-        text.isWrapped = true
-        text.contentsScale = UIScreen.main.scale
-        text.string = ""
-        container.addSublayer(text)
-        
-        context.setValue(container, forKey: "layer")
-        mainDisp.perform(NSSelectorFromString("addClient:"), with: context)
-        
-        self.rootLayer = container
-        self.bgLayer = bg
-        self.textLayer = text
-        self.overlayContext = context
-        self.mainDisplay = mainDisp
-        
-        DispatchQueue.main.async {
-            self.isRunning = true
+            wantsPipStart = true
+            
+            DispatchQueue.main.async {
+                self.isRunning = true
+            }
+            
+            // Enqueue sample buffer lập tức để kích hoạt khả năng bắt đầu PiP
+            enqueueFrame(force: true)
+            startFrameTimer()
+            
+            // Thử khởi chạy PiP ngay lập tức
+            if pipController?.isPictureInPicturePossible == true {
+                pipController?.startPictureInPicture()
+            }
+        } catch {
+            Logger.log("Không thể bật phụ đề nổi: \(error.localizedDescription)", level: .error)
+            DispatchQueue.main.async {
+                self.isRunning = false
+            }
         }
     }
 
     func stop() {
-        audioPlayer?.stop()
-        hideTimer?.invalidate()
-        
-        if let ctx = overlayContext, let mainDisp = mainDisplay {
-            mainDisp.perform(NSSelectorFromString("removeClient:"), with: ctx)
-        }
-        
-        self.rootLayer = nil
-        self.bgLayer = nil
-        self.textLayer = nil
-        self.overlayContext = nil
-        self.mainDisplay = nil
-        
+        wantsPipStart = false
+        frameTimer?.invalidate()
+        frameTimer = nil
+        pipController?.stopPictureInPicture()
         DispatchQueue.main.async {
             self.isRunning = false
         }
     }
 
     func update(text: String, translation: String) {
-        guard isRunning else { return }
-        
-        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanTranslation = translation.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if cleanText.isEmpty && cleanTranslation.isEmpty { return }
-        
-        let fullText = cleanTranslation.isEmpty ? cleanText : "\(cleanText)\n\n\(cleanTranslation)"
-        
-        DispatchQueue.main.async {
-            self.textLayer?.string = fullText
-            self.bgLayer?.opacity = 1.0
-            
-            self.hideTimer?.invalidate()
-            self.hideTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
-                self?.textLayer?.string = ""
-                self?.bgLayer?.opacity = 0.0
+        let showOriginal = AppSettings.shared.showOriginalSubtitle
+        if showOriginal && !text.isEmpty && !translation.isEmpty {
+            currentText = "\(text)\n\(translation)"
+        } else {
+            currentText = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        hideTextAt = currentText.isEmpty ? nil : Date().addingTimeInterval(6)
+        enqueueFrame(force: true)
+    }
+
+    private func startFrameTimer() {
+        frameTimer?.invalidate()
+        frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / Double(frameRate), repeats: true) { [weak self] _ in
+            self?.enqueueFrame(force: false)
+        }
+        frameTimer?.tolerance = 0.01
+    }
+
+    private func enqueueFrame(force: Bool) {
+        guard force || pipController?.isPictureInPictureActive == true else { return }
+        if let hideTextAt, Date() >= hideTextAt {
+            currentText = ""
+            self.hideTextAt = nil
+        }
+        guard let buffer = makeSampleBuffer(text: currentText) else { return }
+        if displayLayer.status == .failed {
+            displayLayer.flush()
+        }
+        displayLayer.enqueue(buffer)
+    }
+
+    private func makeSampleBuffer(text: String) -> CMSampleBuffer? {
+        guard let pixelBuffer = makePixelBuffer(text: text) else { return nil }
+
+        var formatDescription: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &formatDescription
+        )
+        guard let formatDescription else { return nil }
+
+        let pts = CMTime(value: frameIndex, timescale: frameRate)
+        frameIndex += 1
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: frameRate),
+            presentationTimeStamp: pts,
+            decodeTimeStamp: .invalid
+        )
+
+        var sampleBuffer: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescription: formatDescription,
+            sampleTiming: &timing,
+            sampleBufferOut: &sampleBuffer
+        )
+        if let sampleBuffer,
+           let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: true) as? [CFMutableDictionary] {
+            for item in attachments {
+                CFDictionarySetValue(
+                    item,
+                    Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                    Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
+                )
             }
         }
+        return sampleBuffer
+    }
+
+    private func makePixelBuffer(text: String) -> CVPixelBuffer? {
+        let renderSize = currentRenderSize()
+        if renderSize != lastRenderSize {
+            lastRenderSize = renderSize
+        }
+
+        var pixelBuffer: CVPixelBuffer?
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferCGImageCompatibilityKey: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+            kCVPixelBufferIOSurfacePropertiesKey: [:]
+        ]
+
+        CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            Int(renderSize.width),
+            Int(renderSize.height),
+            kCVPixelFormatType_32BGRA,
+            attrs as CFDictionary,
+            &pixelBuffer
+        )
+        guard let pixelBuffer else { return nil }
+
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
+        guard let context = CGContext(
+            data: baseAddress,
+            width: Int(renderSize.width),
+            height: Int(renderSize.height),
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+
+        UIGraphicsPushContext(context)
+        UIColor.clear.setFill()
+        UIBezierPath(rect: CGRect(origin: .zero, size: renderSize)).fill()
+
+        let displayText = compactSubtitle(text)
+        guard !displayText.isEmpty else {
+            UIGraphicsPopContext()
+            return pixelBuffer
+        }
+
+        // Cấu hình Paragraph Style cho phụ đề tĩnh căn giữa và tự động xuống dòng
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
+
+        let fontSize: CGFloat = renderSize.width > 500 ? 32 : 24
+        let textAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
+            .foregroundColor: UIColor.white,
+            .paragraphStyle: paragraph,
+            .strokeColor: UIColor.black,
+            .strokeWidth: NSNumber(value: -3.5) // Viền đen thanh lịch giúp tăng độ tương phản rõ nét trên mọi nền video
+        ]
+
+        let nsText = NSString(string: displayText)
+        let maxTextWidth = renderSize.width - 60
+        let boundingBox = nsText.boundingRect(
+            with: CGSize(width: maxTextWidth, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: textAttrs,
+            context: nil
+        )
+
+        let textWidth = CGFloat(ceil(Double(boundingBox.width)))
+        let textHeight = CGFloat(ceil(Double(boundingBox.height)))
+
+        // Hộp đen mờ bo tròn ôm sát nội dung chữ (Padding ngang 40, dọc 20) - Dùng toán tử ba ngôi loại bỏ hoàn toàn cảnh báo/lỗi phân giải kiểu dữ liệu
+        let boxWidth = textWidth + 40 < renderSize.width - 20 ? textWidth + 40 : renderSize.width - 20
+        let boxHeight = textHeight + 20 < renderSize.height - 16 ? textHeight + 20 : renderSize.height - 16
+        let boxRect = CGRect(
+            x: (renderSize.width - boxWidth) / 2,
+            y: (renderSize.height - boxHeight) / 2,
+            width: boxWidth,
+            height: boxHeight
+        )
+
+        // Vẽ nền hộp đen mờ (opacity 82% sang xịn)
+        UIColor.black.withAlphaComponent(0.82).setFill()
+        let path = UIBezierPath(roundedRect: boxRect, cornerRadius: 16)
+        path.fill()
+
+        // Vẽ viền sáng tinh tế cho hộp phụ đề
+        UIColor.white.withAlphaComponent(0.08).setStroke()
+        let border = UIBezierPath(roundedRect: boxRect.insetBy(dx: 1, dy: 1), cornerRadius: 15)
+        border.lineWidth = 1
+        border.stroke()
+
+        // Vẽ chữ căn giữa trong hộp
+        let textRect = CGRect(
+            x: boxRect.minX + 20,
+            y: boxRect.minY + (boxRect.height - textHeight) / 2,
+            width: boxRect.width - 40,
+            height: textHeight
+        )
+
+        context.saveGState()
+        nsText.draw(in: textRect, withAttributes: textAttrs)
+        context.restoreGState()
+
+        UIGraphicsPopContext()
+        return pixelBuffer
+    }
+
+    private func compactSubtitle(_ text: String, limit: Int = 220) -> String {
+        let normalized = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > limit else { return normalized }
+        return String(normalized.suffix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func currentRenderSize() -> CGSize {
+        let screenBounds = UIScreen.main.bounds
+        let isLandscape = screenBounds.width > screenBounds.height
+        // Thiết lập kích thước tỉ lệ vàng cho hộp phụ đề (aspect ratio rộng để ôm trọn 1-2 dòng)
+        if isLandscape {
+            return CGSize(width: 720, height: 140)
+        } else {
+            return CGSize(width: 480, height: 120)
+        }
+    }
+}
+
+extension SystemSubtitleOverlayManager: AVPictureInPictureControllerDelegate {
+    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        DispatchQueue.main.async {
+            self.isRunning = true
+        }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        DispatchQueue.main.async {
+            self.isRunning = false
+        }
+    }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        Logger.log("PiP failed to start: \(error.localizedDescription)", level: .error)
+        DispatchQueue.main.async {
+            self.isRunning = false
+        }
+    }
+}
+
+extension SystemSubtitleOverlayManager: AVPictureInPictureSampleBufferPlaybackDelegate {
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {}
+
+    func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
+        CMTimeRange(start: .zero, duration: CMTime(value: 24 * 60 * 60, timescale: 1))
+    }
+
+    func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
+        false
+    }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
+        completionHandler()
     }
 }
