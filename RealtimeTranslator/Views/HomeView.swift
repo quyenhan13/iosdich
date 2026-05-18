@@ -291,8 +291,9 @@ struct HomeView: View {
         }
 
         systemOverlay.start()
-        alertMessage = "Đã bật phụ đề nổi. Bấm nút Broadcast bên dưới và chọn Transifyr Audio để thu âm thanh app/web đang phát. App chính không dùng microphone."
-        showAlert = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)
+        }
     }
 }
 
