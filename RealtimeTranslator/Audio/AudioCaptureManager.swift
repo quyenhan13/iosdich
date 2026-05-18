@@ -13,6 +13,7 @@ final class AudioCaptureManager: ObservableObject {
         guard !isRecording else { return }
         
         try AudioSessionManager.configureForRecording()
+        BackgroundKeepAliveManager.shared.begin()
         
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -43,6 +44,7 @@ final class AudioCaptureManager: ObservableObject {
         audioEngine.stop()
         
         try? AudioSessionManager.deactivate()
+        BackgroundKeepAliveManager.shared.end()
         
         DispatchQueue.main.async {
             self.isRecording = false
