@@ -8,23 +8,31 @@ struct HomeView: View {
 
     @State private var alertMessage = ""
     @State private var showAlert = false
+    @State private var isMiniMode = false
 
     var body: some View {
         NavigationView {
             ZStack {
                 TransifyrBackground()
 
-                VStack(spacing: 14) {
-                    header
-                    tabBar
-                    listenPanel
-                    consolePanel
-                    footer
+                if isMiniMode && captureManager.isRecording {
+                    miniListeningView
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    VStack(spacing: 14) {
+                        header
+                        tabBar
+                        listenPanel
+                        consolePanel
+                        footer
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
             }
+            .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isMiniMode)
             .navigationBarHidden(true)
         }
         .accentColor(.white)
@@ -33,6 +41,61 @@ struct HomeView: View {
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Lỗi xảy ra"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
+    }
+
+    private var miniListeningView: some View {
+        VStack(spacing: 16) {
+            Button {
+                isMiniMode = false
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(TransifyrTheme.accentGradient)
+                        .frame(width: 72, height: 72)
+                        .shadow(color: TransifyrTheme.accent.opacity(0.5), radius: 24, y: 10)
+
+                    Circle()
+                        .stroke(Color.white.opacity(0.28), lineWidth: 1)
+                        .frame(width: 86, height: 86)
+
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                }
+            }
+            .buttonStyle(.plain)
+
+            VStack(spacing: 6) {
+                Text("Đang dịch")
+                    .font(.system(size: 18, weight: .black))
+                    .foregroundColor(.white)
+
+                Text("Chạm icon để mở lại")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(TransifyrTheme.textSecondary)
+            }
+
+            if !subtitleManager.currentTranslatedText.isEmpty {
+                Text(subtitleManager.currentTranslatedText)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.cyan)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 20)
+            }
+
+            Button(action: stopAll) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .background(TransifyrTheme.dangerGradient)
+                    .clipShape(Circle())
+                    .shadow(color: Color.red.opacity(0.35), radius: 14, y: 8)
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var header: some View {
@@ -287,6 +350,7 @@ struct HomeView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 do {
                     try captureManager.startCapture()
+                    isMiniMode = true
                 } catch {
                     alertMessage = "Không thể khởi động bộ thu âm: \(error.localizedDescription)"
                     showAlert = true
@@ -297,6 +361,7 @@ struct HomeView: View {
     }
 
     private func stopAll() {
+        isMiniMode = false
         captureManager.stopCapture()
         wsClient.disconnect()
     }
