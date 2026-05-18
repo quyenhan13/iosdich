@@ -13,8 +13,8 @@ struct SubtitleOverlayView: View {
         VStack(spacing: 8) {
             if !text.isEmpty {
                 Text(text)
-                    .font(style.font)
                     .italic()
+                    .font(style.font)
                     .foregroundColor(style.foregroundColor.opacity(0.75))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
