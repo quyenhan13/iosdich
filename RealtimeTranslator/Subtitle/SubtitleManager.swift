@@ -192,15 +192,18 @@ final class SubtitleManager: ObservableObject {
         let timestamp = groupDefaults.double(forKey: "broadcast_current_translation_at")
         guard timestamp > lastBroadcastTimestamp else { return }
 
+        let original = groupDefaults.string(forKey: "broadcast_current_original")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let translation = groupDefaults.string(forKey: "broadcast_current_translation")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !translation.isEmpty else { return }
+        
+        guard !translation.isEmpty || !original.isEmpty else { return }
 
         lastBroadcastTimestamp = timestamp
         resetSilenceTimer()
 
         DispatchQueue.main.async {
-            self.currentText = ""
+            self.currentText = self.trimSubtitleBuffer(original)
             self.currentTranslatedText = self.trimSubtitleBuffer(translation)
         }
     }

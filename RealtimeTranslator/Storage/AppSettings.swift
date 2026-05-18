@@ -24,12 +24,21 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(overlayStyle, forKey: "overlay_style") }
     }
 
+    @Published var showOriginalSubtitle: Bool {
+        didSet {
+            UserDefaults.standard.set(showOriginalSubtitle, forKey: "show_original_subtitle")
+            groupDefaults?.set(showOriginalSubtitle, forKey: "show_original_subtitle")
+            groupDefaults?.synchronize()
+        }
+    }
+
     private let groupDefaults = UserDefaults(suiteName: appGroupID)
 
     private init() {
         self.sourceLanguage = UserDefaults.standard.string(forKey: "source_language") ?? "auto"
         self.targetLanguage = UserDefaults.standard.string(forKey: "target_language") ?? "vi"
         self.overlayStyle = UserDefaults.standard.string(forKey: "overlay_style") ?? "Classic"
+        self.showOriginalSubtitle = UserDefaults.standard.object(forKey: "show_original_subtitle") as? Bool ?? false
         _ = syncSharedSettings()
     }
     
@@ -77,8 +86,10 @@ final class AppSettings: ObservableObject {
 
         UserDefaults.standard.set(sourceLanguage, forKey: "source_language")
         UserDefaults.standard.set(targetLanguage, forKey: "target_language")
+        UserDefaults.standard.set(showOriginalSubtitle, forKey: "show_original_subtitle")
         groupDefaults?.set(sourceLanguage, forKey: "source_language")
         groupDefaults?.set(targetLanguage, forKey: "target_language")
+        groupDefaults?.set(showOriginalSubtitle, forKey: "show_original_subtitle")
         UserDefaults.standard.synchronize()
         groupDefaults?.synchronize()
         writeSharedSettingsFile(apiKey: key)
@@ -97,10 +108,11 @@ final class AppSettings: ObservableObject {
             return
         }
 
-        let payload: [String: String] = [
+        let payload: [String: Any] = [
             "soniox_api_key_fallback": apiKey,
             "source_language": sourceLanguage,
-            "target_language": targetLanguage
+            "target_language": targetLanguage,
+            "show_original_subtitle": showOriginalSubtitle
         ]
 
         do {

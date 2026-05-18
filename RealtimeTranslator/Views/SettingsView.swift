@@ -94,6 +94,12 @@ struct SettingsView: View {
                 selection: $settings.overlayStyle,
                 values: SubtitleStyle.allCases.map { ($0.rawValue, $0.rawValue) }
             )
+
+            Toggle("Hiển thị câu gốc (dòng trực tiếp)", isOn: $settings.showOriginalSubtitle)
+                .tint(TransifyrTheme.accent)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.top, 6)
         }
     }
 

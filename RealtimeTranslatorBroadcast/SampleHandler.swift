@@ -30,8 +30,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
             return
         }
 
-        client.onTranslation = { [weak self] text in
-            self?.defaults?.set(text, forKey: "broadcast_current_translation")
+        client.onTranslation = { [weak self] original, translation in
+            self?.defaults?.set(original, forKey: "broadcast_current_original")
+            self?.defaults?.set(translation, forKey: "broadcast_current_translation")
             self?.defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
         }
         client.connect(apiKey: apiKey, sourceLang: sourceLang, targetLang: targetLang)
@@ -77,8 +78,9 @@ private final class BroadcastSonioxClient {
     }()
     private var connected = false
     private var activeTranslation = ""
+    private var activeOriginal = ""
     private var lastUpdateAt = Date()
-    var onTranslation: ((String) -> Void)?
+    var onTranslation: ((String, String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
         let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
@@ -144,6 +146,8 @@ private final class BroadcastSonioxClient {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tokens = json["tokens"] as? [[String: Any]] else { return }
 
+        var committedOriginal = ""
+        var provisionalOriginal = ""
         var committedTranslation = ""
         var provisionalTranslation = ""
         var shouldEndSegment = false
@@ -154,19 +158,29 @@ private final class BroadcastSonioxClient {
                 continue
             }
 
-            guard token["translation_status"] as? String == "translation",
-                  let text = token["text"] as? String,
-                  !text.isEmpty else { continue }
+            guard let text = token["text"] as? String, !text.isEmpty else { continue }
 
-            if isCommitted(token) {
-                committedTranslation += text
+            let isTranslation = token["translation_status"] as? String == "translation"
+            let isStable = isCommitted(token)
+
+            if isTranslation {
+                if isStable {
+                    committedTranslation += text
+                } else {
+                    provisionalTranslation += text
+                }
             } else {
-                provisionalTranslation += text
+                if isStable {
+                    committedOriginal += text
+                } else {
+                    provisionalOriginal += text
+                }
             }
         }
 
         if Date().timeIntervalSince(lastUpdateAt) > 4.5 {
             activeTranslation = ""
+            activeOriginal = ""
         }
 
         if !committedTranslation.isEmpty {
@@ -174,17 +188,24 @@ private final class BroadcastSonioxClient {
             lastUpdateAt = Date()
         }
 
-        if !provisionalTranslation.isEmpty {
+        if !committedOriginal.isEmpty {
+            activeOriginal = appendUniqueText(activeOriginal, committedOriginal)
             lastUpdateAt = Date()
         }
 
-        let clean = trimSubtitleBuffer(activeTranslation + provisionalTranslation)
-        if !clean.isEmpty {
-            onTranslation?(clean)
+        if !provisionalTranslation.isEmpty || !provisionalOriginal.isEmpty {
+            lastUpdateAt = Date()
+        }
+
+        let cleanOriginal = trimSubtitleBuffer(activeOriginal + provisionalOriginal)
+        let cleanTranslation = trimSubtitleBuffer(activeTranslation + provisionalTranslation)
+        if !cleanTranslation.isEmpty || !cleanOriginal.isEmpty {
+            onTranslation?(cleanOriginal, cleanTranslation)
         }
 
         if shouldEndSegment || shouldFlushSentence(committedTranslation) {
             activeTranslation = ""
+            activeOriginal = ""
         }
     }
 

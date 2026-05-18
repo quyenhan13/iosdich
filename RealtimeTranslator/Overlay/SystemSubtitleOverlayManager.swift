@@ -11,9 +11,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private var pipController: AVPictureInPictureController?
     private var frameTimer: Timer?
     private var currentText = ""
-    private var lastRenderedText = ""
     private var lastRenderSize = CGSize.zero
-    private var scrollOffset: CGFloat = 0
     private var hideTextAt: Date?
     private var frameIndex: Int64 = 0
     private let frameRate: Int32 = 24
@@ -57,8 +55,12 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     }
 
     func update(text: String, translation: String) {
-        let next = translation.isEmpty ? text : translation
-        currentText = next.trimmingCharacters(in: .whitespacesAndNewlines)
+        let showOriginal = AppSettings.shared.showOriginalSubtitle
+        if showOriginal && !text.isEmpty && !translation.isEmpty {
+            currentText = "\(text)\n\(translation)"
+        } else {
+            currentText = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         hideTextAt = currentText.isEmpty ? nil : Date().addingTimeInterval(6)
         enqueueFrame(force: true)
     }
@@ -128,8 +130,6 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         let renderSize = currentRenderSize()
         if renderSize != lastRenderSize {
             lastRenderSize = renderSize
-            scrollOffset = 0
-            lastRenderedText = ""
         }
 
         var pixelBuffer: CVPixelBuffer?
@@ -173,54 +173,66 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
             return pixelBuffer
         }
 
-        let tickerRect = CGRect(x: 10, y: 10, width: renderSize.width - 20, height: renderSize.height - 20)
-        UIColor.black.withAlphaComponent(0.82).setFill()
-        UIBezierPath(roundedRect: tickerRect, cornerRadius: tickerRect.height / 2).fill()
-
-        UIColor.white.withAlphaComponent(0.08).setStroke()
-        let border = UIBezierPath(roundedRect: tickerRect.insetBy(dx: 1, dy: 1), cornerRadius: (tickerRect.height - 2) / 2)
-        border.lineWidth = 1
-        border.stroke()
-
+        // Cấu hình Paragraph Style cho phụ đề tĩnh căn giữa và tự động xuống dòng
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .left
-        paragraph.lineBreakMode = .byClipping
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
 
+        let fontSize: CGFloat = renderSize.width > 500 ? 32 : 24
         let textAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: renderSize.width > 700 ? 38 : 30, weight: .heavy),
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
             .foregroundColor: UIColor.white,
             .paragraphStyle: paragraph,
             .strokeColor: UIColor.black,
-            .strokeWidth: -4
+            .strokeWidth: -3.5 // Viền đen thanh lịch giúp tăng độ tương phản rõ nét trên mọi nền video
         ]
 
         let nsText = NSString(string: displayText)
-        let textSize = nsText.size(withAttributes: textAttrs)
-        let contentRect = tickerRect.insetBy(dx: 26, dy: 10)
-        let y = contentRect.midY - textSize.height / 2
+        let maxTextWidth = renderSize.width - 60
+        let boundingBox = nsText.boundingRect(
+            with: CGSize(width: maxTextWidth, height: CGFloat.greatestMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: textAttrs,
+            context: nil
+        )
 
-        if displayText != lastRenderedText {
-            lastRenderedText = displayText
-            scrollOffset = contentRect.width
-        }
+        let textWidth = ceil(boundingBox.width)
+        let textHeight = ceil(boundingBox.height)
 
-        let x: CGFloat
-        if textSize.width > contentRect.width {
-            scrollOffset -= 2.8
-            if scrollOffset < -textSize.width - 80 {
-                scrollOffset = contentRect.width
-            }
-            x = contentRect.minX + scrollOffset
-        } else {
-            x = contentRect.midX - textSize.width / 2
-        }
+        // Hộp đen mờ bo tròn ôm sát nội dung chữ (Padding ngang 40, dọc 20)
+        let boxWidth = min(textWidth + 40, renderSize.width - 20)
+        let boxHeight = min(textHeight + 20, renderSize.height - 16)
+        let boxRect = CGRect(
+            x: (renderSize.width - boxWidth) / 2,
+            y: (renderSize.height - boxHeight) / 2,
+            width: boxWidth,
+            height: boxHeight
+        )
+
+        // Vẽ nền hộp đen mờ (opacity 82% sang xịn)
+        UIColor.black.withAlphaComponent(0.82).setFill()
+        let path = UIBezierPath(roundedRect: boxRect, cornerRadius: 16)
+        path.fill()
+
+        // Vẽ viền sáng tinh tế cho hộp phụ đề
+        UIColor.white.withAlphaComponent(0.08).setStroke()
+        let border = UIBezierPath(roundedRect: boxRect.insetBy(dx: 1, dy: 1), cornerRadius: 15)
+        border.lineWidth = 1
+        border.stroke()
+
+        // Vẽ chữ căn giữa trong hộp
+        let textRect = CGRect(
+            x: boxRect.minX + 20,
+            y: boxRect.minY + (boxRect.height - textHeight) / 2,
+            width: boxRect.width - 40,
+            height: textHeight
+        )
 
         context.saveGState()
-        context.clip(to: contentRect)
-        nsText.draw(at: CGPoint(x: x, y: y), withAttributes: textAttrs)
+        nsText.draw(in: textRect, withAttributes: textAttrs)
         context.restoreGState()
-        UIGraphicsPopContext()
 
+        UIGraphicsPopContext()
         return pixelBuffer
     }
 
@@ -234,11 +246,12 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private func currentRenderSize() -> CGSize {
         let screenBounds = UIScreen.main.bounds
         let isLandscape = screenBounds.width > screenBounds.height
-        let scale = UIScreen.main.scale
-        let screenWidth = max(screenBounds.width, screenBounds.height)
-        let portraitWidth = min(max(min(screenBounds.width, screenBounds.height) * scale * 0.72, 300), 420)
-        let landscapeWidth = min(max(screenWidth * scale * 0.54, 520), 760)
-        return CGSize(width: isLandscape ? landscapeWidth : portraitWidth, height: isLandscape ? 78 : 68)
+        // Thiết lập kích thước tỉ lệ vàng cho hộp phụ đề (aspect ratio rộng để ôm trọn 1-2 dòng)
+        if isLandscape {
+            return CGSize(width: 720, height: 140)
+        } else {
+            return CGSize(width: 480, height: 120)
+        }
     }
 }
 
