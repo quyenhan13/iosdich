@@ -1,3 +1,4 @@
+import ReplayKit
 import SwiftUI
 
 struct HomeView: View {
@@ -20,11 +21,12 @@ struct HomeView: View {
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     VStack(spacing: 14) {
-                        header
-                        tabBar
-                        listenPanel
-                        consolePanel
-                        footer
+                    header
+                    tabBar
+                    listenPanel
+                    broadcastPanel
+                    consolePanel
+                    footer
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 14)
@@ -182,6 +184,32 @@ struct HomeView: View {
             }
             .frame(height: 100)
         }
+    }
+
+    private var broadcastPanel: some View {
+        HStack(spacing: 12) {
+            BroadcastPickerButton()
+                .frame(width: 44, height: 44)
+                .background(TransifyrTheme.input)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(TransifyrTheme.borderLight, lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Bắt âm thanh app khác")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                Text("Bật Transifyr Audio trong Broadcast để dịch như desktop")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(TransifyrTheme.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(TransifyrTheme.input.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(TransifyrTheme.border, lineWidth: 1))
     }
 
     private var consolePanel: some View {

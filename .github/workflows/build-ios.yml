@@ -50,6 +50,10 @@ jobs:
           APP_COPY=$(find Payload -maxdepth 1 -name "*.app" -type d | head -n 1)
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_COPY/Info.plist")
           ldid -SRealtimeTranslator/TrollStore.entitlements "$APP_COPY/$EXECUTABLE"
+          find "$APP_COPY" -name "*.appex" -type d | while read -r EXTENSION_PATH; do
+            EXTENSION_EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$EXTENSION_PATH/Info.plist")
+            ldid -SRealtimeTranslatorBroadcast/Broadcast.entitlements "$EXTENSION_PATH/$EXTENSION_EXECUTABLE"
+          done
           ldid -e "$APP_COPY/$EXECUTABLE"
           zip -r RealtimeTranslator-trollstore.ipa Payload
 
