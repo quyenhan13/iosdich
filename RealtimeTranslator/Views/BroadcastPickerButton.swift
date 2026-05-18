@@ -5,7 +5,7 @@ struct BroadcastPickerButton: UIViewRepresentable {
     func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
         let picker = RPSystemBroadcastPickerView(frame: .zero)
         picker.preferredExtension = "com.vteen.RealtimeTranslator.Broadcast"
-        picker.showsMicrophoneButton = true
+        picker.showsMicrophoneButton = false
 
         if let button = picker.subviews.compactMap({ $0 as? UIButton }).first {
             button.setImage(UIImage(systemName: "waveform.circle.fill"), for: .normal)

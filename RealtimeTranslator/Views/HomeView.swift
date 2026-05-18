@@ -1,47 +1,40 @@
-import ReplayKit
 import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var settings = AppSettings.shared
-    @StateObject private var captureManager = AudioCaptureManager()
-    @StateObject private var wsClient = SonioxWebSocketClient()
+    @StateObject private var autoUpdateManager = AutoUpdateManager.shared
     @StateObject private var subtitleManager = SubtitleManager()
     @StateObject private var systemOverlay = SystemSubtitleOverlayManager()
 
     @State private var alertMessage = ""
     @State private var showAlert = false
-    @State private var isMiniMode = false
 
     var body: some View {
         NavigationView {
             ZStack {
                 TransifyrBackground()
 
-                if isMiniMode && captureManager.isRecording {
-                    miniListeningView
-                        .transition(.scale.combined(with: .opacity))
-                } else {
-                    VStack(spacing: 14) {
+                VStack(spacing: 14) {
                     header
                     tabBar
                     listenPanel
                     broadcastPanel
                     consolePanel
                     footer
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 14)
-                    .padding(.bottom, 10)
-                    .transition(.opacity)
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+                .transition(.opacity)
             }
-            .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isMiniMode)
             .navigationBarHidden(true)
         }
         .accentColor(.white)
         .onAppear {
-            setupCallbacks()
             subtitleManager.startBroadcastSubtitleSync()
+            Task {
+                await autoUpdateManager.checkForUpdates(silent: true)
+            }
         }
         .onDisappear {
             subtitleManager.stopBroadcastSubtitleSync()
@@ -53,57 +46,39 @@ struct HomeView: View {
             systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
         }
         .alert(isPresented: $showAlert) {
-            Alert(title: Text("Lỗi xảy ra"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+            Alert(title: Text("Thông báo"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+        }
+        .alert(item: $autoUpdateManager.availableUpdate) { update in
+            Alert(
+                title: Text("Có bản cập nhật mới"),
+                message: Text("Tải \(update.title) để cài IPA mới nhất."),
+                primaryButton: .default(Text("Tải ngay")) {
+                    autoUpdateManager.install(update)
+                },
+                secondaryButton: .cancel(Text("Để sau")) {
+                    autoUpdateManager.dismiss(update)
+                }
+            )
         }
     }
 
-    private var miniListeningView: some View {
-        VStack {
-            Spacer()
-
-            if !subtitleManager.currentTranslatedText.isEmpty || !subtitleManager.currentText.isEmpty {
-                SubtitleOverlayView(
-                    text: subtitleManager.currentText,
-                    translation: subtitleManager.currentTranslatedText
-                )
-                .padding(.horizontal, 18)
-                .padding(.bottom, 16)
-            }
-
-            HStack {
-                Spacer()
-
-                ZStack(alignment: .topTrailing) {
-                    Button {
-                        isMiniMode = false
-                    } label: {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 58, height: 58)
-                            .background(TransifyrTheme.accentGradient)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
-                            .shadow(color: TransifyrTheme.accent.opacity(0.55), radius: 18, y: 8)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: stopAll) {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 9, weight: .black))
-                            .foregroundColor(.white)
-                            .frame(width: 24, height: 24)
-                            .background(TransifyrTheme.dangerGradient)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.65), lineWidth: 1))
-                    }
-                    .offset(x: 6, y: -6)
+    private var listenPanel: some View {
+        VStack(spacing: 14) {
+            Button(action: startBroadcastMode) {
+                HStack(spacing: 10) {
+                    Image(systemName: systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
+                    Text(systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 28)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 15)
+                .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
+                .clipShape(Capsule())
+                .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 18, y: 8)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(height: 100)
     }
 
     private var header: some View {
@@ -136,10 +111,10 @@ struct HomeView: View {
 
             HStack(spacing: 7) {
                 Circle()
-                    .fill(statusColor)
+                    .fill(systemOverlay.isRunning ? Color.green : TransifyrTheme.textSecondary)
                     .frame(width: 8, height: 8)
-                    .shadow(color: statusColor.opacity(0.8), radius: 6)
-                Text(statusText)
+                    .shadow(color: (systemOverlay.isRunning ? Color.green : TransifyrTheme.textSecondary).opacity(0.8), radius: 6)
+                Text(systemOverlay.isRunning ? "Phụ đề nổi" : "Sẵn sàng")
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
             }
@@ -165,35 +140,6 @@ struct HomeView: View {
         .background(TransifyrTheme.input.opacity(0.8))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(TransifyrTheme.border, lineWidth: 1))
-    }
-
-    private var listenPanel: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                if captureManager.isRecording {
-                    Circle()
-                        .fill(Color.red.opacity(0.16))
-                        .frame(width: 176, height: 176)
-                        .scaleEffect(1.15)
-                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: captureManager.isRecording)
-                }
-
-                Button(action: toggleCapture) {
-                    HStack(spacing: 10) {
-                        Image(systemName: captureManager.isRecording ? "stop.fill" : "mic.fill")
-                        Text(captureManager.isRecording ? "Dừng dịch" : "Bắt đầu lắng nghe")
-                    }
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 30)
-                    .padding(.vertical, 15)
-                    .background(captureManager.isRecording ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
-                    .clipShape(Capsule())
-                    .shadow(color: (captureManager.isRecording ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 18, y: 8)
-                }
-            }
-            .frame(height: 100)
-        }
     }
 
     private var broadcastPanel: some View {
@@ -334,82 +280,19 @@ struct HomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 9))
     }
 
-    private var statusColor: Color {
-        switch wsClient.connectionState {
-        case .disconnected: return TransifyrTheme.textSecondary
-        case .connecting: return .orange
-        case .connected: return .green
-        case .error: return .red
-        }
-    }
-
-    private var statusText: String {
-        switch wsClient.connectionState {
-        case .disconnected: return "Sẵn sàng"
-        case .connecting: return "Đang kết nối"
-        case .connected: return "Đang dịch"
-        case .error: return "Lỗi"
-        }
-    }
-
-    private func setupCallbacks() {
-        captureManager.onPCMData = { [weak wsClient] data in
-            wsClient?.sendAudioChunk(data)
-        }
-
-        wsClient.onTranslationResult = { [weak subtitleManager] response in
-            subtitleManager?.handleSonioxResponse(response)
-        }
-
-        wsClient.onError = { errorStr in
-            self.alertMessage = "Soniox WebSocket lỗi: \(errorStr)"
-            self.showAlert = true
-        }
-    }
-
-    private func toggleCapture() {
-        captureManager.isRecording ? stopAll() : startAll()
-    }
-
     private func toggleSystemOverlay() {
         systemOverlay.isRunning ? systemOverlay.stop() : systemOverlay.start()
     }
 
-    private func startAll() {
-        let key = settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            alertMessage = "Vui lòng vào phần Cài đặt và nhập Soniox API Key để bắt đầu dịch."
-            showAlert = true
+    private func startBroadcastMode() {
+        if systemOverlay.isRunning {
+            systemOverlay.stop()
             return
         }
 
-        Task {
-            let hasMicPermission = await Permissions.requestMicrophonePermission()
-            guard hasMicPermission else {
-                alertMessage = "Vui lòng cấp quyền Microphone trong Cài đặt hệ thống."
-                showAlert = true
-                return
-            }
-
-            wsClient.connect(apiKey: key, sourceLang: settings.sourceLanguage, targetLang: settings.targetLanguage)
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                do {
-                    try captureManager.startCapture()
-                    isMiniMode = true
-                } catch {
-                    alertMessage = "Không thể khởi động bộ thu âm: \(error.localizedDescription)"
-                    showAlert = true
-                    stopAll()
-                }
-            }
-        }
-    }
-
-    private func stopAll() {
-        isMiniMode = false
-        captureManager.stopCapture()
-        wsClient.disconnect()
+        systemOverlay.start()
+        alertMessage = "Đã bật phụ đề nổi. Bấm nút Broadcast bên dưới và chọn Transifyr Audio để thu âm thanh app/web đang phát. App chính không dùng microphone."
+        showAlert = true
     }
 }
 
