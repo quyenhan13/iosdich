@@ -12,15 +12,15 @@ final class SampleHandler: RPBroadcastSampleHandler {
         let sharedSettings = loadSharedSettingsFile()
         let apiKey = firstNonEmpty(
             defaults?.string(forKey: "soniox_api_key_fallback"),
-            sharedSettings["soniox_api_key_fallback"]
+            sharedSettings["soniox_api_key_fallback"] as? String
         ) ?? ""
         let sourceLang = firstNonEmpty(
             defaults?.string(forKey: "source_language"),
-            sharedSettings["source_language"]
+            sharedSettings["source_language"] as? String
         ) ?? "auto"
         let targetLang = firstNonEmpty(
             defaults?.string(forKey: "target_language"),
-            sharedSettings["target_language"]
+            sharedSettings["target_language"] as? String
         ) ?? "vi"
 
         guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -44,14 +44,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
             .first { !$0.isEmpty }
     }
 
-    private func loadSharedSettingsFile() -> [String: String] {
+    private func loadSharedSettingsFile() -> [String: Any] {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID) else {
             return [:]
         }
 
         let fileURL = containerURL.appendingPathComponent("transifyr_shared_settings.json")
         guard let data = try? Data(contentsOf: fileURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return [:]
         }
         return json
