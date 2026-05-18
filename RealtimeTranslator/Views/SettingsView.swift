@@ -150,8 +150,10 @@ struct SettingsView: View {
     }
 
     private func saveKey() {
-        settings.apiKey = apiKeyInput
-        alertMessage = "Đã lưu API Key thành công."
+        let savedToKeychain = settings.saveAPIKey(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+        alertMessage = savedToKeychain
+            ? "Đã lưu API Key thành công."
+            : "Đã lưu API Key bằng chế độ TrollStore fallback."
         showAlert = true
     }
 }

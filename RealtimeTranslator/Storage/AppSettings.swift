@@ -22,7 +22,21 @@ final class AppSettings: ObservableObject {
     }
     
     var apiKey: String {
-        get { KeychainStore.shared.load(forKey: "soniox_api_key") ?? "" }
-        set { _ = KeychainStore.shared.save(newValue, forKey: "soniox_api_key") }
+        get {
+            KeychainStore.shared.load(forKey: "soniox_api_key")
+                ?? UserDefaults.standard.string(forKey: "soniox_api_key_fallback")
+                ?? ""
+        }
+        set {
+            _ = saveAPIKey(newValue)
+        }
+    }
+
+    @discardableResult
+    func saveAPIKey(_ value: String) -> Bool {
+        UserDefaults.standard.set(value, forKey: "soniox_api_key_fallback")
+        let savedToKeychain = KeychainStore.shared.save(value, forKey: "soniox_api_key")
+        Logger.log(savedToKeychain ? "Đã lưu API Key vào Keychain." : "Keychain lỗi, đã lưu API Key vào UserDefaults fallback.")
+        return savedToKeychain
     }
 }
