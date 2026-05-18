@@ -1,0 +1,21 @@
+name: RealtimeTranslator
+options:
+  bundleIdPrefix: com.vteen
+  minimumXcodeGenVersion: 2.28.0
+
+targets:
+  RealtimeTranslator:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: RealtimeTranslator
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vteen.RealtimeTranslator
+        SWIFT_VERSION: "5.9"
+        INFOPLIST_FILE: RealtimeTranslator/Info.plist
+        DEVELOPMENT_TEAM: "" # Để trống để build không cần ký (unsigned) trên CI
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""

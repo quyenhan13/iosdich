@@ -1,0 +1,50 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Kiểm tra phiên bản Xcode
+        run: xcodebuild -version
+
+      - name: Cài đặt XcodeGen
+        run: brew install xcodegen
+
+      - name: Sinh cấu hình Xcode Project bằng XcodeGen
+        run: xcodegen generate
+
+      - name: Biên dịch ứng dụng
+        run: |
+          xcodebuild \
+            -project RealtimeTranslator.xcodeproj \
+            -scheme RealtimeTranslator \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Đóng gói Unsigned IPA
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Release-iphoneos/*.app" -type d | head -n 1)
+          echo "Tìm thấy đường dẫn app: $APP_PATH"
+          cp -R "$APP_PATH" Payload/
+          zip -r RealtimeTranslator-unsigned.ipa Payload
+
+      - name: Upload Artifact File IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RealtimeTranslator-unsigned-ipa
+          path: RealtimeTranslator-unsigned.ipa
