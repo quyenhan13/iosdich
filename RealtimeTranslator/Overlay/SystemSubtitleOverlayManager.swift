@@ -15,6 +15,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private var hideTextAt: Date?
     private var frameIndex: Int64 = 0
     private let frameRate: Int32 = 24
+    private var wantsPipStart = false
 
     override init() {
         super.init()
@@ -37,15 +38,30 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         guard isSupported, pipController?.isPictureInPictureActive != true else { return }
         do {
             try AudioSessionManager.configureForPlaybackOverlay()
+            wantsPipStart = true
+            
+            DispatchQueue.main.async {
+                self.isRunning = true
+            }
+            
+            // Enqueue sample buffer lập tức để kích hoạt khả năng bắt đầu PiP
             enqueueFrame(force: true)
             startFrameTimer()
-            pipController?.startPictureInPicture()
+            
+            // Thử khởi chạy PiP ngay lập tức
+            if pipController?.isPictureInPicturePossible == true {
+                pipController?.startPictureInPicture()
+            }
         } catch {
             Logger.log("Không thể bật phụ đề nổi: \(error.localizedDescription)", level: .error)
+            DispatchQueue.main.async {
+                self.isRunning = false
+            }
         }
     }
 
     func stop() {
+        wantsPipStart = false
         frameTimer?.invalidate()
         frameTimer = nil
         pipController?.stopPictureInPicture()
