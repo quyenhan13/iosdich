@@ -115,8 +115,8 @@ final class SubtitleManager: ObservableObject {
             activeTranslationSentence += committedTranslation
         }
 
-        let displayOriginal = trimSubtitleBuffer(confirmedOriginal + provisionalOriginal)
-        let displayTranslation = trimSubtitleBuffer(confirmedTranslation + provisionalTranslation)
+        let displayOriginal = trimSubtitleBuffer(activeOriginalSentence + provisionalOriginal)
+        let displayTranslation = trimSubtitleBuffer(activeTranslationSentence + provisionalTranslation)
 
         DispatchQueue.main.async {
             self.currentText = displayOriginal
@@ -125,6 +125,10 @@ final class SubtitleManager: ObservableObject {
 
         if shouldFlushSentence(committedTranslation) {
             flushActiveSentence()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.currentText = ""
+                self.currentTranslatedText = ""
+            }
         }
 
         if confirmedOriginal.count > 1800 {

@@ -76,7 +76,8 @@ private final class BroadcastSonioxClient {
         return URLSession(configuration: config)
     }()
     private var connected = false
-    private var confirmedTranslation = ""
+    private var activeTranslation = ""
+    private var lastUpdateAt = Date()
     var onTranslation: ((String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
@@ -145,12 +146,17 @@ private final class BroadcastSonioxClient {
 
         var committedTranslation = ""
         var provisionalTranslation = ""
+        var shouldEndSegment = false
 
         for token in tokens {
+            if token["text"] as? String == "<end>" {
+                shouldEndSegment = true
+                continue
+            }
+
             guard token["translation_status"] as? String == "translation",
                   let text = token["text"] as? String,
-                  !text.isEmpty,
-                  text != "<end>" else { continue }
+                  !text.isEmpty else { continue }
 
             if isCommitted(token) {
                 committedTranslation += text
@@ -159,18 +165,31 @@ private final class BroadcastSonioxClient {
             }
         }
 
-        if !committedTranslation.isEmpty {
-            confirmedTranslation = appendUniqueText(confirmedTranslation, committedTranslation)
+        if Date().timeIntervalSince(lastUpdateAt) > 4.5 {
+            activeTranslation = ""
         }
 
-        let clean = trimSubtitleBuffer(confirmedTranslation + provisionalTranslation)
+        if !committedTranslation.isEmpty {
+            activeTranslation = appendUniqueText(activeTranslation, committedTranslation)
+            lastUpdateAt = Date()
+        }
+
+        if !provisionalTranslation.isEmpty {
+            lastUpdateAt = Date()
+        }
+
+        let clean = trimSubtitleBuffer(activeTranslation + provisionalTranslation)
         if !clean.isEmpty {
             onTranslation?(clean)
         }
 
-        if confirmedTranslation.count > 1800 {
-            confirmedTranslation = String(confirmedTranslation.suffix(1200))
+        if shouldEndSegment || shouldFlushSentence(committedTranslation) {
+            activeTranslation = ""
         }
+    }
+
+    private func shouldFlushSentence(_ text: String) -> Bool {
+        text.range(of: #"[.!?。！？]\s*$"#, options: .regularExpression) != nil
     }
 
     private func isCommitted(_ token: [String: Any]) -> Bool {
