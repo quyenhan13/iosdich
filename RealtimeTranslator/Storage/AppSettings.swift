@@ -49,6 +49,11 @@ final class AppSettings: ObservableObject {
     @discardableResult
     func saveAPIKey(_ value: String) -> Bool {
         let cleanedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedValue.isEmpty else {
+            Logger.log("Bo qua luu API Key rong.")
+            return false
+        }
+
         UserDefaults.standard.set(cleanedValue, forKey: "soniox_api_key_fallback")
         groupDefaults?.set(cleanedValue, forKey: "soniox_api_key_fallback")
         let savedToKeychain = KeychainStore.shared.save(cleanedValue, forKey: "soniox_api_key")

@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
     @State private var apiKeyInput: String = ""
+    @State private var showAPIKey = false
     @State private var showAlert = false
     @State private var alertMessage = ""
 
@@ -62,8 +64,37 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Soniox API Key")
                     .formLabel()
-                SecureField("Dán Soniox API Key...", text: $apiKeyInput)
-                    .textFieldStyle(TransifyrTextFieldStyle())
+                HStack(spacing: 8) {
+                    Group {
+                        if showAPIKey {
+                            TextField("Dan Soniox API Key...", text: $apiKeyInput)
+                        } else {
+                            SecureField("Dan Soniox API Key...", text: $apiKeyInput)
+                        }
+                    }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .keyboardType(.asciiCapable)
+
+                    Button(action: pasteKey) {
+                        Image(systemName: "doc.on.clipboard.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(TransifyrTheme.input)
+                            .clipShape(Circle())
+                    }
+
+                    Button(action: { showAPIKey.toggle() }) {
+                        Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(TransifyrTheme.input)
+                            .clipShape(Circle())
+                    }
+                }
+                .textFieldStyle(TransifyrTextFieldStyle())
                 Button(action: saveKey) {
                     HStack {
                         Image(systemName: "key.fill")
@@ -150,11 +181,36 @@ struct SettingsView: View {
     }
 
     private func saveKey() {
-        let savedToKeychain = settings.saveAPIKey(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+        let cleanedKey = cleanAPIKey(apiKeyInput)
+        guard !cleanedKey.isEmpty else {
+            alertMessage = "API Key dang rong. Bam nut dan hoac dan lai key roi luu."
+            showAlert = true
+            return
+        }
+
+        apiKeyInput = cleanedKey
+        let savedToKeychain = settings.saveAPIKey(cleanedKey)
         alertMessage = savedToKeychain
             ? "Đã lưu API Key thành công."
             : "Đã lưu API Key bằng chế độ TrollStore fallback."
         showAlert = true
+    }
+
+    private func pasteKey() {
+        guard let pasted = UIPasteboard.general.string else {
+            alertMessage = "Clipboard khong co API Key de dan."
+            showAlert = true
+            return
+        }
+
+        apiKeyInput = cleanAPIKey(pasted)
+    }
+
+    private func cleanAPIKey(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
