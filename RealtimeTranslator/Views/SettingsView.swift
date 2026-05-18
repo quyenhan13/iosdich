@@ -5,83 +5,173 @@ struct SettingsView: View {
     @State private var apiKeyInput: String = ""
     @State private var showAlert = false
     @State private var alertMessage = ""
-    
+
     let languages = [
-        ("auto", "Tự động phát hiện (Auto)"),
-        ("en", "English (Mỹ)"),
-        ("zh", "Chinese (Trung)"),
-        ("ja", "Japanese (Nhật)"),
-        ("ko", "Korean (Hàn)"),
-        ("vi", "Vietnamese (Việt)")
+        ("auto", "Tự động phát hiện"),
+        ("en", "Tiếng Anh"),
+        ("zh", "Tiếng Trung"),
+        ("ja", "Tiếng Nhật"),
+        ("ko", "Tiếng Hàn"),
+        ("vi", "Tiếng Việt")
     ]
-    
+
     let targetLanguages = [
-        ("vi", "Tiếng Việt 🇻🇳"),
-        ("en", "Tiếng Anh 🇺🇸")
+        ("vi", "Tiếng Việt"),
+        ("en", "Tiếng Anh")
     ]
 
     var body: some View {
-        Form {
-            Section(header: Text("Tài khoản & API").foregroundColor(.blue)) {
-                SecureField("Soniox API Key", text: $apiKeyInput)
-                    .onAppear {
-                        apiKeyInput = settings.apiKey
-                    }
-                
-                Button(action: {
-                    settings.apiKey = apiKeyInput
-                    alertMessage = "Đã lưu API Key thành công!"
-                    showAlert = true
-                }) {
-                    HStack {
-                        Spacer()
-                        Text("Lưu API Key")
-                            .bold()
-                        Spacer()
-                    }
+        ZStack {
+            TransifyrBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    titleBlock
+                    translationCard
+                    overlayCard
+                    infoCard
                 }
-            }
-            
-            Section(header: Text("Cấu hình ngôn ngữ dịch").foregroundColor(.blue)) {
-                Picker("Ngôn ngữ gốc", selection: $settings.sourceLanguage) {
-                    ForEach(languages, id: \.0) { lang in
-                        Text(lang.1).tag(lang.0)
-                    }
-                }
-                
-                Picker("Dịch sang", selection: $settings.targetLanguage) {
-                    ForEach(targetLanguages, id: \.0) { lang in
-                        Text(lang.1).tag(lang.0)
-                    }
-                }
-            }
-            
-            Section(header: Text("Giao diện phụ đề").foregroundColor(.blue)) {
-                Picker("Style phụ đề", selection: $settings.overlayStyle) {
-                    ForEach(SubtitleStyle.allCases, id: \.rawValue) { style in
-                        Text(style.rawValue).tag(style.rawValue)
-                    }
-                }
-            }
-            
-            Section(header: Text("Thông tin Soniox SDK")) {
-                HStack {
-                    Text("Model STT")
-                    Spacer()
-                    Text("stt-rt-v4")
-                        .foregroundColor(.gray)
-                }
-                HStack {
-                    Text("Phiên bản App")
-                    Spacer()
-                    Text("1.0.0 (MVP)")
-                        .foregroundColor(.gray)
-                }
+                .padding(18)
             }
         }
-        .navigationTitle("Cài Đặt")
+        .navigationTitle("Cài đặt")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .onAppear { apiKeyInput = settings.apiKey }
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Thông báo"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Cấu hình dịch thuật")
+                .font(.system(size: 24, weight: .black))
+                .foregroundColor(.white)
+            Text("Thiết lập Soniox realtime, ngôn ngữ và phụ đề overlay.")
+                .font(.subheadline)
+                .foregroundColor(TransifyrTheme.textSecondary)
+        }
+    }
+
+    private var translationCard: some View {
+        settingsCard(title: "Dịch thuật", subtitle: "Máy chủ nhận dạng giọng nói và dịch thời gian thực.") {
+            labeledPicker("Ngôn ngữ nguồn", selection: $settings.sourceLanguage, values: languages)
+            labeledPicker("Dịch sang", selection: $settings.targetLanguage, values: targetLanguages)
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Soniox API Key")
+                    .formLabel()
+                SecureField("Dán Soniox API Key...", text: $apiKeyInput)
+                    .textFieldStyle(TransifyrTextFieldStyle())
+                Button(action: saveKey) {
+                    HStack {
+                        Image(systemName: "key.fill")
+                        Text("Lưu API Key")
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(TransifyrTheme.accentGradient)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+    }
+
+    private var overlayCard: some View {
+        settingsCard(title: "Phụ đề Overlay", subtitle: "Chọn phong cách hiển thị khi xem phim trong trình duyệt.") {
+            labeledPicker(
+                "Style phụ đề",
+                selection: $settings.overlayStyle,
+                values: SubtitleStyle.allCases.map { ($0.rawValue, $0.rawValue) }
+            )
+        }
+    }
+
+    private var infoCard: some View {
+        settingsCard(title: "Thông tin", subtitle: "Cấu hình build hiện tại.") {
+            infoRow("Model STT", "stt-rt-v4")
+            infoRow("Endpoint", "transcribe-websocket")
+            infoRow("Phiên bản", "1.0.0")
+        }
+    }
+
+    private func settingsCard<Content: View>(title: String, subtitle: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.white)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(TransifyrTheme.textSecondary)
+            }
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TransifyrTheme.glass)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(TransifyrTheme.borderLight, lineWidth: 1))
+    }
+
+    private func labeledPicker(_ title: String, selection: Binding<String>, values: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .formLabel()
+            Picker(title, selection: selection) {
+                ForEach(values, id: \.0) { value in
+                    Text(value.1).tag(value.0)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(TransifyrTheme.input)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(TransifyrTheme.borderLight, lineWidth: 1))
+        }
+    }
+
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .foregroundColor(TransifyrTheme.textSecondary)
+            Spacer()
+            Text(value)
+                .foregroundColor(.white)
+                .fontWeight(.semibold)
+        }
+        .font(.subheadline)
+    }
+
+    private func saveKey() {
+        settings.apiKey = apiKeyInput
+        alertMessage = "Đã lưu API Key thành công."
+        showAlert = true
+    }
+}
+
+private extension Text {
+    func formLabel() -> some View {
+        self.font(.caption.weight(.bold))
+            .foregroundColor(TransifyrTheme.textSecondary)
+            .textCase(.uppercase)
+    }
+}
+
+struct TransifyrTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(TransifyrTheme.input)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(TransifyrTheme.borderLight, lineWidth: 1))
     }
 }
