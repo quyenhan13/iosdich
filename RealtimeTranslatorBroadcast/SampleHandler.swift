@@ -154,51 +154,74 @@ private final class BroadcastSonioxClient {
         }
     }
 
+    // Theo Soniox docs: final tokens phải được ACCUMULATE qua nhiều response
+    // Non-final tokens RESET mỗi response
+    // Translation tokens chỉ xuất hiện sau endpoint và luôn là is_final=true
+    private var finalOriginalTokens: [String] = []
+    private var finalTranslationTokens: [String] = []
+
     private func handleResponse(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
-        if let errMsg = json["error"] as? String ?? json["error_message"] as? String {
-            _ = errMsg
+        if let errCode = json["error_code"] {
+            // Lỗi API → không làm gì (broadcast sẽ tự tắt)
+            _ = errCode
             return
         }
 
-        guard let tokens = json["tokens"] as? [[String: Any]], !tokens.isEmpty else { return }
+        guard let tokens = json["tokens"] as? [[String: Any]] else { return }
 
-        var committedOriginal = ""
-        var provisionalOriginal = ""
-        var committedTranslation = ""
-        var provisionalTranslation = ""
-        var shouldEndSegment = false
+        // Non-final tokens reset mỗi response (chỉ lấy từ response này)
+        var nonFinalOriginal: [String] = []
+        var nonFinalTranslation: [String] = []
+        var isEndpoint = false
 
         for token in tokens {
-            if token["text"] as? String == "<end>" {
-                shouldEndSegment = true
+            let tokenText = token["text"] as? String ?? ""
+            if tokenText == "<end>" {
+                isEndpoint = true
                 continue
             }
-            guard let tokenText = token["text"] as? String, !tokenText.isEmpty else { continue }
+            guard !tokenText.isEmpty else { continue }
 
             let isTranslation = token["translation_status"] as? String == "translation"
-            let isStable = isCommitted(token)
+            let isFinal = token["is_final"] as? Bool ?? false
 
-            if isTranslation {
-                if isStable { committedTranslation += tokenText }
-                else { provisionalTranslation += tokenText }
+            if isFinal {
+                // Final tokens: append vào buffer tích lũy
+                if isTranslation {
+                    finalTranslationTokens.append(tokenText)
+                } else {
+                    finalOriginalTokens.append(tokenText)
+                }
             } else {
-                if isStable { committedOriginal += tokenText }
-                else { provisionalOriginal += tokenText }
+                // Non-final: chỉ dùng cho response này
+                if isTranslation {
+                    nonFinalTranslation.append(tokenText)
+                } else {
+                    nonFinalOriginal.append(tokenText)
+                }
             }
         }
 
-        let cleanOriginal = trimSubtitleBuffer(committedOriginal + provisionalOriginal)
-        let cleanTranslation = trimSubtitleBuffer(committedTranslation + provisionalTranslation)
+        // Ghép final + non-final để hiển thị
+        let displayOriginal = trimSubtitleBuffer(
+            finalOriginalTokens.joined() + nonFinalOriginal.joined()
+        )
+        let displayTranslation = trimSubtitleBuffer(
+            finalTranslationTokens.joined() + nonFinalTranslation.joined()
+        )
 
-        if !cleanTranslation.isEmpty || !cleanOriginal.isEmpty {
-            onTranslation?(cleanOriginal, cleanTranslation)
+        if !displayTranslation.isEmpty || !displayOriginal.isEmpty {
+            onTranslation?(displayOriginal, displayTranslation)
         }
 
-        if shouldEndSegment {
+        // Khi endpoint xảy ra → gửi signal reset, sau đó xóa buffer final
+        if isEndpoint {
             onTranslation?("", "")
+            finalOriginalTokens.removeAll()
+            finalTranslationTokens.removeAll()
         }
     }
 
