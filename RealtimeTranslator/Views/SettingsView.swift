@@ -1,10 +1,8 @@
 import SwiftUI
-import UIKit
 
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
     @State private var apiKeyInput: String = ""
-    @State private var showAPIKey = false
     @State private var showAlert = false
     @State private var alertMessage = ""
 
@@ -65,36 +63,23 @@ struct SettingsView: View {
                 Text("Soniox API Key")
                     .formLabel()
                 HStack(spacing: 8) {
-                    Group {
-                        if showAPIKey {
-                            TextField("Dan Soniox API Key...", text: $apiKeyInput)
-                        } else {
-                            SecureField("Dan Soniox API Key...", text: $apiKeyInput)
-                        }
-                    }
+                    TextField("Dan Soniox API Key...", text: $apiKeyInput)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .keyboardType(.asciiCapable)
+                    .foregroundColor(.white)
 
-                    Button(action: pasteKey) {
-                        Image(systemName: "doc.on.clipboard.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 34, height: 34)
-                            .background(TransifyrTheme.input)
-                            .clipShape(Circle())
+                    PasteButton(payloadType: String.self) { values in
+                        pasteKey(values.first ?? "")
                     }
-
-                    Button(action: { showAPIKey.toggle() }) {
-                        Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 34, height: 34)
-                            .background(TransifyrTheme.input)
-                            .clipShape(Circle())
-                    }
+                    .buttonBorderShape(.capsule)
+                    .tint(TransifyrTheme.accent)
                 }
-                .textFieldStyle(TransifyrTextFieldStyle())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .background(TransifyrTheme.input)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(TransifyrTheme.borderLight, lineWidth: 1))
                 Button(action: saveKey) {
                     HStack {
                         Image(systemName: "key.fill")
@@ -196,14 +181,15 @@ struct SettingsView: View {
         showAlert = true
     }
 
-    private func pasteKey() {
-        guard let pasted = UIPasteboard.general.string else {
+    private func pasteKey(_ pasted: String) {
+        let cleanedKey = cleanAPIKey(pasted)
+        guard !cleanedKey.isEmpty else {
             alertMessage = "Clipboard khong co API Key de dan."
             showAlert = true
             return
         }
 
-        apiKeyInput = cleanAPIKey(pasted)
+        apiKeyInput = cleanedKey
     }
 
     private func cleanAPIKey(_ value: String) -> String {
