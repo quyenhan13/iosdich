@@ -18,7 +18,7 @@ final class PCMConverter {
     }
 
     func convertToPCM16Mono16k(buffer: AVAudioPCMBuffer) -> Data? {
-        guard let sourceFormat = buffer.format else { return nil }
+        let sourceFormat = buffer.format
         
         if converter == nil {
             converter = AVAudioConverter(from: sourceFormat, to: targetFormat)
@@ -33,12 +33,18 @@ final class PCMConverter {
             return nil
         }
         
-        var error: NSError?
+        var isDataProvided = false
         let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+            if isDataProvided {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
             outStatus.pointee = .haveData
+            isDataProvided = true
             return buffer
         }
         
+        var error: NSError?
         converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
         
         if let error = error {

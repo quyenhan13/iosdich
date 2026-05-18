@@ -65,7 +65,7 @@ final class SonioxWebSocketClient: ObservableObject {
 
     func sendAudioChunk(_ data: Data) {
         guard connectionState == .connected else { return }
-        let message = URLSessionWebSocketMessage.data(data)
+        let message = URLSessionWebSocketTask.Message.data(data)
         webSocketTask?.send(message) { [weak self] error in
             if let error = error {
                 Logger.log("Gửi audio chunk bị lỗi: \(error.localizedDescription)", level: .error)
@@ -90,7 +90,7 @@ final class SonioxWebSocketClient: ObservableObject {
         do {
             let data = try jsonEncoder.encode(config)
             if let jsonString = String(data: data, encoding: .utf8) {
-                let message = URLSessionWebSocketMessage.string(jsonString)
+                let message = URLSessionWebSocketTask.Message.string(jsonString)
                 webSocketTask?.send(message) { [weak self] error in
                     if let error = error {
                         Logger.log("Gửi config bị lỗi: \(error.localizedDescription)", level: .error)
