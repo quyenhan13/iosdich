@@ -198,10 +198,10 @@ struct HomeView: View {
             subtitleManager?.handleSonioxResponse(response)
         }
         
-        wsClient.onError = { [weak self] errorStr in
-            self?.alertMessage = "Soniox WebSocket Lỗi: \(errorStr)"
-            self?.showAlert = true
-            self?.stopAll()
+        wsClient.onError = { errorStr in
+            self.alertMessage = "Soniox WebSocket Lỗi: \(errorStr)"
+            self.showAlert = true
+            self.stopAll()
         }
     }
     

@@ -12,7 +12,7 @@ final class PCMConverter {
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsBigEndianKey: false,
             AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsNonInterleavedKey: false
+            AVLinearPCMIsNonInterleaved: false
         ]
         self.targetFormat = AVAudioFormat(settings: targetSettings)!
     }
