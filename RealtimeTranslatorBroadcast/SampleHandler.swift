@@ -5,9 +5,9 @@ import ReplayKit
 final class SampleHandler: RPBroadcastSampleHandler {
     private let client = BroadcastSonioxClient()
     private let converter = BroadcastPCMConverter()
+    private let defaults = UserDefaults(suiteName: "group.com.vteen.RealtimeTranslator")
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
-        let defaults = UserDefaults(suiteName: "group.com.vteen.RealtimeTranslator")
         let apiKey = defaults?.string(forKey: "soniox_api_key_fallback") ?? ""
         let sourceLang = defaults?.string(forKey: "source_language") ?? "auto"
         let targetLang = defaults?.string(forKey: "target_language") ?? "vi"
@@ -19,6 +19,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
             return
         }
 
+        client.onTranslation = { [weak self] text in
+            self?.defaults?.set(text, forKey: "broadcast_current_translation")
+            self?.defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
+        }
         client.connect(apiKey: apiKey, sourceLang: sourceLang, targetLang: targetLang)
     }
 
@@ -42,6 +46,7 @@ private final class BroadcastSonioxClient {
         return URLSession(configuration: config)
     }()
     private var connected = false
+    var onTranslation: ((String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
         let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
@@ -91,11 +96,30 @@ private final class BroadcastSonioxClient {
     private func receiveLoop() {
         socket?.receive { [weak self] result in
             guard let self else { return }
-            if case .success = result {
+            if case .success(let message) = result {
+                if case .string(let text) = message {
+                    self.handleResponse(text)
+                }
                 self.receiveLoop()
             } else {
                 self.connected = false
             }
+        }
+    }
+
+    private func handleResponse(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tokens = json["tokens"] as? [[String: Any]] else { return }
+
+        let translation = tokens.compactMap { token -> String? in
+            guard token["translation_status"] as? String == "translation" else { return nil }
+            return token["text"] as? String
+        }.joined()
+
+        let clean = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty {
+            onTranslation?(clean)
         }
     }
 }
