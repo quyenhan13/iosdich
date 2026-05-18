@@ -10,6 +10,13 @@ final class AudioSessionManager {
         Logger.log("Đã cấu hình thành công AVAudioSession cho việc thu âm.")
     }
 
+    static func configureForPlaybackOverlay() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+        try session.setActive(true)
+        Logger.log("Đã cấu hình AVAudioSession cho phụ đề nổi PiP.")
+    }
+
     static func deactivate() throws {
         try AVAudioSession.sharedInstance().setActive(false)
         Logger.log("Đã tắt AVAudioSession.")

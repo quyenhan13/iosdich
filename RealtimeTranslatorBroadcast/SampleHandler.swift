@@ -46,6 +46,7 @@ private final class BroadcastSonioxClient {
         return URLSession(configuration: config)
     }()
     private var connected = false
+    private var confirmedTranslation = ""
     var onTranslation: ((String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
@@ -112,15 +113,57 @@ private final class BroadcastSonioxClient {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tokens = json["tokens"] as? [[String: Any]] else { return }
 
-        let translation = tokens.compactMap { token -> String? in
-            guard token["translation_status"] as? String == "translation" else { return nil }
-            return token["text"] as? String
-        }.joined()
+        var committedTranslation = ""
+        var provisionalTranslation = ""
 
-        let clean = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        for token in tokens {
+            guard token["translation_status"] as? String == "translation",
+                  let text = token["text"] as? String,
+                  !text.isEmpty,
+                  text != "<end>" else { continue }
+
+            if isCommitted(token) {
+                committedTranslation += text
+            } else {
+                provisionalTranslation += text
+            }
+        }
+
+        if !committedTranslation.isEmpty {
+            confirmedTranslation = appendUniqueText(confirmedTranslation, committedTranslation)
+        }
+
+        let clean = trimSubtitleBuffer(confirmedTranslation + provisionalTranslation)
         if !clean.isEmpty {
             onTranslation?(clean)
         }
+
+        if confirmedTranslation.count > 1800 {
+            confirmedTranslation = String(confirmedTranslation.suffix(1200))
+        }
+    }
+
+    private func isCommitted(_ token: [String: Any]) -> Bool {
+        (token["is_final"] as? Bool ?? false)
+            || (token["final"] as? Bool ?? false)
+            || (token["is_stable"] as? Bool ?? false)
+            || (token["stable"] as? Bool ?? false)
+    }
+
+    private func appendUniqueText(_ base: String, _ addition: String) -> String {
+        let cleanAddition = addition.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        guard !cleanAddition.isEmpty else { return base }
+        if base.hasSuffix(cleanAddition) {
+            return base
+        }
+        return base + cleanAddition
+    }
+
+    private func trimSubtitleBuffer(_ text: String, maxChars: Int = 140) -> String {
+        let normalized = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > maxChars else { return normalized }
+        return String(normalized.suffix(maxChars)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

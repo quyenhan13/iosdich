@@ -6,6 +6,7 @@ struct HomeView: View {
     @StateObject private var captureManager = AudioCaptureManager()
     @StateObject private var wsClient = SonioxWebSocketClient()
     @StateObject private var subtitleManager = SubtitleManager()
+    @StateObject private var systemOverlay = SystemSubtitleOverlayManager()
 
     @State private var alertMessage = ""
     @State private var showAlert = false
@@ -38,7 +39,19 @@ struct HomeView: View {
             .navigationBarHidden(true)
         }
         .accentColor(.white)
-        .onAppear(perform: setupCallbacks)
+        .onAppear {
+            setupCallbacks()
+            subtitleManager.startBroadcastSubtitleSync()
+        }
+        .onDisappear {
+            subtitleManager.stopBroadcastSubtitleSync()
+        }
+        .onChange(of: subtitleManager.currentTranslatedText) { _ in
+            systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
+        }
+        .onChange(of: subtitleManager.currentText) { _ in
+            systemOverlay.update(text: subtitleManager.currentText, translation: subtitleManager.currentTranslatedText)
+        }
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Lỗi xảy ra"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
@@ -147,9 +160,6 @@ struct HomeView: View {
                 tabLabel(title: "Cài đặt", icon: "gearshape.fill", active: false)
             }
 
-            NavigationLink(destination: BrowserPlayerView(subtitleManager: subtitleManager, captureManager: captureManager)) {
-                tabLabel(title: "Xem phim", icon: "play.rectangle.fill", active: false)
-            }
         }
         .padding(4)
         .background(TransifyrTheme.input.opacity(0.8))
@@ -205,6 +215,18 @@ struct HomeView: View {
             }
 
             Spacer()
+
+            Button(action: toggleSystemOverlay) {
+                Image(systemName: systemOverlay.isRunning ? "pip.exit" : "pip")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 42, height: 42)
+                    .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
+            }
+            .disabled(!systemOverlay.isSupported)
+            .opacity(systemOverlay.isSupported ? 1 : 0.45)
         }
         .padding(12)
         .background(TransifyrTheme.input.opacity(0.7))
@@ -347,6 +369,10 @@ struct HomeView: View {
 
     private func toggleCapture() {
         captureManager.isRecording ? stopAll() : startAll()
+    }
+
+    private func toggleSystemOverlay() {
+        systemOverlay.isRunning ? systemOverlay.stop() : systemOverlay.start()
     }
 
     private func startAll() {

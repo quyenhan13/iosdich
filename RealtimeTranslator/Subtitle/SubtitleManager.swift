@@ -6,6 +6,9 @@ final class SubtitleManager: ObservableObject {
     @Published var historyLines: [SubtitleLine] = []
     
     private var silenceTimer: Timer?
+    private var broadcastTimer: Timer?
+    private var lastBroadcastTimestamp: TimeInterval = 0
+    private let groupDefaults = UserDefaults(suiteName: "group.com.vteen.RealtimeTranslator")
     private var confirmedOriginal = ""
     private var confirmedTranslation = ""
     private var activeOriginalSentence = ""
@@ -59,6 +62,20 @@ final class SubtitleManager: ObservableObject {
         confirmedTranslation = ""
         activeOriginalSentence = ""
         activeTranslationSentence = ""
+    }
+
+    func startBroadcastSubtitleSync() {
+        guard broadcastTimer == nil else { return }
+        broadcastTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
+            self?.pullBroadcastSubtitle()
+        }
+        broadcastTimer?.tolerance = 0.12
+        pullBroadcastSubtitle()
+    }
+
+    func stopBroadcastSubtitleSync() {
+        broadcastTimer?.invalidate()
+        broadcastTimer = nil
     }
 
     private func handleSonioxTokens(_ tokens: [SonioxToken]) {
@@ -162,6 +179,25 @@ final class SubtitleManager: ObservableObject {
                 self?.currentText = ""
                 self?.currentTranslatedText = ""
             }
+        }
+    }
+
+    private func pullBroadcastSubtitle() {
+        guard let groupDefaults else { return }
+
+        let timestamp = groupDefaults.double(forKey: "broadcast_current_translation_at")
+        guard timestamp > lastBroadcastTimestamp else { return }
+
+        let translation = groupDefaults.string(forKey: "broadcast_current_translation")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !translation.isEmpty else { return }
+
+        lastBroadcastTimestamp = timestamp
+        resetSilenceTimer()
+
+        DispatchQueue.main.async {
+            self.currentText = ""
+            self.currentTranslatedText = self.trimSubtitleBuffer(translation)
         }
     }
 }
