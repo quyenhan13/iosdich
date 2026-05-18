@@ -184,7 +184,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
             .foregroundColor: UIColor.white,
             .paragraphStyle: paragraph,
             .strokeColor: UIColor.black,
-            .strokeWidth: -3.5 // Viền đen thanh lịch giúp tăng độ tương phản rõ nét trên mọi nền video
+            .strokeWidth: NSNumber(value: -3.5) // Viền đen thanh lịch giúp tăng độ tương phản rõ nét trên mọi nền video
         ]
 
         let nsText = NSString(string: displayText)
@@ -196,8 +196,8 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
             context: nil
         )
 
-        let textWidth = ceil(boundingBox.width)
-        let textHeight = ceil(boundingBox.height)
+        let textWidth = boundingBox.width.rounded(.up)
+        let textHeight = boundingBox.height.rounded(.up)
 
         // Hộp đen mờ bo tròn ôm sát nội dung chữ (Padding ngang 40, dọc 20)
         let boxWidth = min(textWidth + 40, renderSize.width - 20)
