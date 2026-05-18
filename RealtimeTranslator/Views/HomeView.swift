@@ -44,57 +44,42 @@ struct HomeView: View {
     }
 
     private var miniListeningView: some View {
-        VStack(spacing: 16) {
-            Button {
-                isMiniMode = false
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(TransifyrTheme.accentGradient)
-                        .frame(width: 72, height: 72)
-                        .shadow(color: TransifyrTheme.accent.opacity(0.5), radius: 24, y: 10)
+        VStack {
+            Spacer()
 
-                    Circle()
-                        .stroke(Color.white.opacity(0.28), lineWidth: 1)
-                        .frame(width: 86, height: 86)
+            HStack {
+                Spacer()
 
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.white)
+                ZStack(alignment: .topTrailing) {
+                    Button {
+                        isMiniMode = false
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 58, height: 58)
+                            .background(TransifyrTheme.accentGradient)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
+                            .shadow(color: TransifyrTheme.accent.opacity(0.55), radius: 18, y: 8)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: stopAll) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 9, weight: .black))
+                            .foregroundColor(.white)
+                            .frame(width: 24, height: 24)
+                            .background(TransifyrTheme.dangerGradient)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.65), lineWidth: 1))
+                    }
+                    .offset(x: 6, y: -6)
                 }
-            }
-            .buttonStyle(.plain)
-
-            VStack(spacing: 6) {
-                Text("Đang dịch")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundColor(.white)
-
-                Text("Chạm icon để mở lại")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(TransifyrTheme.textSecondary)
-            }
-
-            if !subtitleManager.currentTranslatedText.isEmpty {
-                Text(subtitleManager.currentTranslatedText)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(.cyan)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(.horizontal, 20)
-            }
-
-            Button(action: stopAll) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 48, height: 48)
-                    .background(TransifyrTheme.dangerGradient)
-                    .clipShape(Circle())
-                    .shadow(color: Color.red.opacity(0.35), radius: 14, y: 8)
+                .padding(.trailing, 20)
+                .padding(.bottom, 28)
             }
         }
-        .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
