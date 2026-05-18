@@ -70,22 +70,19 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
 private final class BroadcastSonioxClient {
     private var socket: URLSessionWebSocketTask?
-    private let encoder = JSONEncoder()
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
         return URLSession(configuration: config)
     }()
-    private var connected = false
-    private var activeTranslation = ""
-    private var activeOriginal = ""
-    private var lastUpdateAt = Date()
+    private var pendingAudio: [Data] = []
+    private var configSent = false
+    private var configPayload: String = ""
     var onTranslation: ((String, String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
         let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
         socket = session.webSocketTask(with: url)
-        socket?.resume()
 
         let sourceCode = sourceLang == "auto" ? nil : sourceLang
         var payload: [String: Any] = [
@@ -102,27 +99,42 @@ private final class BroadcastSonioxClient {
                 "target_language": targetLang
             ]
         ]
-
         if let sourceCode {
             payload["language_hints"] = [sourceCode]
         }
 
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let text = String(data: data, encoding: .utf8) else { return }
+        configPayload = text
 
+        socket?.resume()
         socket?.send(.string(text)) { [weak self] error in
-            self?.connected = error == nil
+            guard let self else { return }
+            if error == nil {
+                self.configSent = true
+                for chunk in self.pendingAudio {
+                    self.socket?.send(.data(chunk)) { _ in }
+                }
+                self.pendingAudio.removeAll()
+            }
         }
         receiveLoop()
     }
 
     func sendAudio(_ data: Data) {
-        guard connected else { return }
-        socket?.send(.data(data)) { _ in }
+        guard let socket, socket.state == .running else { return }
+        if configSent {
+            socket.send(.data(data)) { _ in }
+        } else {
+            if pendingAudio.count < 50 {
+                pendingAudio.append(data)
+            }
+        }
     }
 
     func disconnect() {
-        connected = false
+        configSent = false
+        pendingAudio.removeAll()
         socket?.cancel(with: .normalClosure, reason: nil)
         socket = nil
     }
@@ -130,21 +142,28 @@ private final class BroadcastSonioxClient {
     private func receiveLoop() {
         socket?.receive { [weak self] result in
             guard let self else { return }
-            if case .success(let message) = result {
+            switch result {
+            case .success(let message):
                 if case .string(let text) = message {
                     self.handleResponse(text)
                 }
                 self.receiveLoop()
-            } else {
-                self.connected = false
+            case .failure:
+                break
             }
         }
     }
 
     private func handleResponse(_ text: String) {
         guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tokens = json["tokens"] as? [[String: Any]] else { return }
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+        if let errMsg = json["error"] as? String ?? json["error_message"] as? String {
+            _ = errMsg
+            return
+        }
+
+        guard let tokens = json["tokens"] as? [[String: Any]], !tokens.isEmpty else { return }
 
         var committedOriginal = ""
         var provisionalOriginal = ""
@@ -157,50 +176,30 @@ private final class BroadcastSonioxClient {
                 shouldEndSegment = true
                 continue
             }
-
-            guard let text = token["text"] as? String, !text.isEmpty else { continue }
+            guard let tokenText = token["text"] as? String, !tokenText.isEmpty else { continue }
 
             let isTranslation = token["translation_status"] as? String == "translation"
             let isStable = isCommitted(token)
 
             if isTranslation {
-                if isStable {
-                    committedTranslation += text
-                } else {
-                    provisionalTranslation += text
-                }
+                if isStable { committedTranslation += tokenText }
+                else { provisionalTranslation += tokenText }
             } else {
-                if isStable {
-                    committedOriginal += text
-                } else {
-                    provisionalOriginal += text
-                }
+                if isStable { committedOriginal += tokenText }
+                else { provisionalOriginal += tokenText }
             }
-        }
-
-        if Date().timeIntervalSince(lastUpdateAt) > 4.5 {
-            lastUpdateAt = Date()
-        }
-
-        if !committedTranslation.isEmpty || !provisionalTranslation.isEmpty || !committedOriginal.isEmpty || !provisionalOriginal.isEmpty {
-            lastUpdateAt = Date()
         }
 
         let cleanOriginal = trimSubtitleBuffer(committedOriginal + provisionalOriginal)
         let cleanTranslation = trimSubtitleBuffer(committedTranslation + provisionalTranslation)
-        
+
         if !cleanTranslation.isEmpty || !cleanOriginal.isEmpty {
             onTranslation?(cleanOriginal, cleanTranslation)
         }
 
-        // Khi Soniox kết thúc segment (<end>), gửi tín hiệu reset để SubtitleManager xóa màn hình
         if shouldEndSegment {
             onTranslation?("", "")
         }
-    }
-
-    private func shouldFlushSentence(_ text: String) -> Bool {
-        text.range(of: #"[.!?。！？]\s*$"#, options: .regularExpression) != nil
     }
 
     private func isCommitted(_ token: [String: Any]) -> Bool {
@@ -208,15 +207,6 @@ private final class BroadcastSonioxClient {
             || (token["final"] as? Bool ?? false)
             || (token["is_stable"] as? Bool ?? false)
             || (token["stable"] as? Bool ?? false)
-    }
-
-    private func appendUniqueText(_ base: String, _ addition: String) -> String {
-        let cleanAddition = addition.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        guard !cleanAddition.isEmpty else { return base }
-        if base.hasSuffix(cleanAddition) {
-            return base
-        }
-        return base + cleanAddition
     }
 
     private func trimSubtitleBuffer(_ text: String, maxChars: Int = 140) -> String {
