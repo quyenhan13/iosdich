@@ -8,7 +8,6 @@ final class SystemFloatingSceneManager: ObservableObject {
 
     private var window: UIWindow?
     private var controller: SystemFloatingSubtitleViewController?
-    private let frontBoardHost = SystemFrontBoardSceneHost.shared()
     private var lastOriginal = ""
     private var lastTranslation = ""
     private var lastFailureReason = ""
@@ -27,7 +26,6 @@ final class SystemFloatingSceneManager: ObservableObject {
 
     var diagnosticSummary: String {
         [
-            "frontBoard": frontBoardHost.available,
             "windowScene": UIApplication.shared.connectedScenes.contains { $0 is UIWindowScene },
             "lastFailure": !lastFailureReason.isEmpty
         ]
@@ -57,12 +55,6 @@ final class SystemFloatingSceneManager: ObservableObject {
             return false
         }
 
-        let frontBoardStarted = frontBoardHost.start(with: scene)
-        if !frontBoardStarted {
-            lastFailureReason = frontBoardHost.diagnosticSummary
-            Logger.log("FrontBoard scene unavailable: \(frontBoardHost.diagnosticSummary)")
-        }
-
         let controller = SystemFloatingSubtitleViewController()
         let overlayWindow = makeRootSceneWindow(scene: scene)
         overlayWindow.windowLevel = UIWindow.Level.statusBar + 10000
@@ -85,7 +77,6 @@ final class SystemFloatingSceneManager: ObservableObject {
         window?.isHidden = true
         window = nil
         controller = nil
-        frontBoardHost.stop()
         isRunning = false
     }
 

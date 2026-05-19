@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 struct HomeView: View {
     @ObservedObject var settings = AppSettings.shared
@@ -9,7 +10,6 @@ struct HomeView: View {
 
     @State private var alertMessage = ""
     @State private var showAlert = false
-    @State private var broadcastRequested = false
 
     var body: some View {
         NavigationView {
@@ -55,9 +55,6 @@ struct HomeView: View {
         }
         .onChange(of: subtitleManager.currentTranslatedText) { newValue in
             if newValue.isEmpty && subtitleManager.currentText.isEmpty { return }
-            if !systemOverlay.isRunning {
-                systemOverlay.start()
-            }
             systemOverlay.update(text: subtitleManager.currentText, translation: newValue)
         }
         .onChange(of: subtitleManager.currentText) { newValue in
@@ -85,16 +82,16 @@ struct HomeView: View {
         HStack(spacing: 14) {
             Button(action: startBroadcastMode) {
                 HStack(spacing: 8) {
-                    Image(systemName: broadcastRequested || systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
-                    Text(broadcastRequested || systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
+                    Image(systemName: systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
+                    Text(systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
                 }
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .background(broadcastRequested || systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
+                .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
                 .clipShape(Capsule())
-                .shadow(color: (broadcastRequested || systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 12, y: 6)
+                .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 12, y: 6)
             }
 
             Button(action: testOverlay) {
@@ -203,6 +200,16 @@ struct HomeView: View {
                     .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
+            }
+
+            Button(action: openFrontBoardShell) {
+                Image(systemName: "rectangle.on.rectangle.circle.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 42, height: 42)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(TransifyrTheme.borderLight, lineWidth: 1))
             }
         }
         .padding(12)
@@ -320,6 +327,16 @@ struct HomeView: View {
         }
     }
 
+    private func openFrontBoardShell() {
+        guard let url = URL(string: "transifyr-frontboard://show") else { return }
+        UIApplication.shared.open(url) { success in
+            if !success {
+                alertMessage = "Chua cai TransifyrFrontBoard.tipa hoac TrollStore chua cho mo shell."
+                showAlert = true
+            }
+        }
+    }
+
     private func testOverlay() {
         if !systemOverlay.isRunning {
             systemOverlay.start()
@@ -332,8 +349,7 @@ struct HomeView: View {
     }
 
     private func startBroadcastMode() {
-        if broadcastRequested || systemOverlay.isRunning {
-            broadcastRequested = false
+        if systemOverlay.isRunning {
             subtitleManager.clear()
             systemOverlay.stop()
             return
@@ -351,8 +367,10 @@ struct HomeView: View {
             return
         }
 
-        broadcastRequested = true
-        NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)
+        systemOverlay.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)
+        }
     }
 }
 
