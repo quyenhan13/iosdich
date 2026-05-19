@@ -6,6 +6,7 @@
 @property(nonatomic, strong) TransifyrSubtitleStore *store;
 @property(nonatomic, strong, nullable) NSTimer *timer;
 @property(nonatomic, copy) NSString *lastTranslation;
+@property(nonatomic, assign) BOOL subtitlesEnabled;
 @end
 
 @implementation TransifyrSubtitleView
@@ -15,6 +16,7 @@
     if (self) {
         _store = [TransifyrSubtitleStore new];
         _lastTranslation = @"";
+        _subtitlesEnabled = YES;
         [self configureView];
     }
     return self;
@@ -56,14 +58,33 @@
 }
 
 - (void)refreshSubtitle {
+    BOOL activeAudio = [self.store hasActiveAudio];
     NSString *translation = [self.store currentTranslation];
-    if ([translation isEqualToString:self.lastTranslation]) {
+    BOOL shouldShow = self.subtitlesEnabled && activeAudio && translation.length > 0;
+    if ([translation isEqualToString:self.lastTranslation] && self.hidden == !shouldShow) {
         return;
     }
 
     self.lastTranslation = translation;
     self.subtitleLabel.text = translation;
-    self.hidden = translation.length == 0;
+    self.hidden = !shouldShow;
+}
+
+- (void)setHidden:(BOOL)hidden {
+    [super setHidden:hidden];
+}
+
+- (void)setSubtitlesEnabled:(BOOL)subtitlesEnabled {
+    _subtitlesEnabled = subtitlesEnabled;
+    if (!subtitlesEnabled) {
+        self.hidden = YES;
+    } else {
+        [self refreshSubtitle];
+    }
+}
+
+- (BOOL)hasActiveAudio {
+    return [self.store hasActiveAudio];
 }
 
 @end

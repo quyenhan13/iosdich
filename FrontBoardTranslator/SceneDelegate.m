@@ -11,6 +11,17 @@
 
 @implementation SceneDelegate
 
+- (UIInterfaceOrientation)activeOrientationForWindowScene:(UIWindowScene *)windowScene {
+    UIInterfaceOrientation orientation = windowScene.interfaceOrientation;
+    if (orientation == UIInterfaceOrientationUnknown) {
+        orientation = UIApplication.sharedApplication.statusBarOrientation;
+    }
+    if (orientation == UIInterfaceOrientationUnknown) {
+        orientation = UIInterfaceOrientationPortrait;
+    }
+    return orientation;
+}
+
 - (void)appDelegate:(AppDelegate *)delegate createFloatingSceneFromScene:(UIWindowScene *)windowScene {
     delegate.binder = [[UIRootWindowScenePresentationBinder alloc] initWithPriority:0 displayConfiguration:windowScene._effectiveSettings.displayConfiguration];
     
@@ -25,6 +36,8 @@
     settings.foreground = YES;
     settings.interruptionPolicy = 0;
     settings.statusBarDisabled = YES;
+    settings.interfaceOrientation = [self activeOrientationForWindowScene:windowScene];
+    settings.frame = windowScene.coordinateSpace.bounds;
     parameters.settings = settings;
     parameters.clientSettings = windowScene._effectiveUIClientSettings;
 
@@ -46,6 +59,11 @@
     self.window.opaque = NO;
     self.window.rootViewController = [ViewController new];
     [self.window makeKeyAndVisible];
+}
+
+- (void)windowScene:(UIWindowScene *)windowScene didUpdateCoordinateSpace:(id<UICoordinateSpace>)previousCoordinateSpace interfaceOrientation:(UIInterfaceOrientation)previousInterfaceOrientation traitCollection:(UITraitCollection *)previousTraitCollection {
+    self.window.frame = windowScene.coordinateSpace.bounds;
+    [self.window.rootViewController.view setNeedsLayout];
 }
 
 - (void)sceneDidDisconnect:(UIScene *)scene {

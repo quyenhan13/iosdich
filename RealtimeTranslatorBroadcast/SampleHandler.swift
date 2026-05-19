@@ -7,6 +7,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private let client = BroadcastSonioxClient()
     private let converter = BroadcastPCMConverter()
     private let defaults = UserDefaults(suiteName: appGroupID)
+    private var lastAudioStatusAt: TimeInterval = 0
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
         setBroadcastStatus("starting")
@@ -50,6 +51,15 @@ final class SampleHandler: RPBroadcastSampleHandler {
         defaults?.synchronize()
     }
 
+    private func setAudioActive() {
+        let now = Date().timeIntervalSince1970
+        defaults?.set(now, forKey: "broadcast_audio_at")
+        if now - lastAudioStatusAt > 0.8 {
+            lastAudioStatusAt = now
+            setBroadcastStatus("sending_audio")
+        }
+    }
+
     private func firstNonEmpty(_ values: String?...) -> String? {
         values
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -77,7 +87,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
         guard sampleBufferType == .audioApp else { return }
         guard let pcm = converter.convert(sampleBuffer), !pcm.isEmpty else { return }
-        setBroadcastStatus("sending_audio")
+        setAudioActive()
         client.sendAudio(pcm)
     }
 }
