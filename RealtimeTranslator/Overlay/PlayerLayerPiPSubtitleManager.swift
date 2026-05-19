@@ -14,6 +14,8 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
     private var activeWindow: UIWindow?
     private var pipStartAttempts = 0
     private var pipStartWorkItem: DispatchWorkItem?
+    private var subtitleAttachAttempts = 0
+    private var subtitleAttachWorkItem: DispatchWorkItem?
 
     private override init() {
         super.init()
@@ -54,7 +56,10 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
     func stop() {
         pipStartWorkItem?.cancel()
         pipStartWorkItem = nil
+        subtitleAttachWorkItem?.cancel()
+        subtitleAttachWorkItem = nil
         pipStartAttempts = 0
+        subtitleAttachAttempts = 0
         pipController?.stopPictureInPicture()
         player?.pause()
         cleanupSubtitleView()
@@ -66,6 +71,10 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
             self.pendingTranslation = cleaned
             self.subtitleView?.text = cleaned
             self.subtitleView?.isHidden = cleaned.isEmpty
+            self.subtitleView?.invalidateIntrinsicContentSize()
+            if self.pipController?.isPictureInPictureActive == true, self.subtitleView == nil {
+                self.scheduleSubtitleAttach(after: 0.05)
+            }
         }
     }
 
@@ -259,31 +268,40 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
     }
 
     private func makeSubtitleView(in window: UIWindow) -> UILabel {
-        let label = UILabel()
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.64)
+        let label = PaddedSubtitleLabel()
+        label.contentInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.72)
         label.textColor = .white
-        label.font = .systemFont(ofSize: 18, weight: .semibold)
+        label.font = .systemFont(ofSize: 15.5, weight: .semibold)
         label.textAlignment = .center
         label.numberOfLines = 2
         label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.68
-        label.layer.cornerRadius = 14
+        label.minimumScaleFactor = 0.72
+        label.lineBreakMode = .byTruncatingTail
+        label.preferredMaxLayoutWidth = min(window.bounds.width * 0.74, 360)
+        label.layer.cornerRadius = 12
+        label.layer.zPosition = CGFloat.greatestFiniteMagnitude
         label.clipsToBounds = true
         label.text = pendingTranslation
         label.isHidden = pendingTranslation.isEmpty
         label.translatesAutoresizingMaskIntoConstraints = false
         window.addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: window.leadingAnchor, constant: 18),
-            label.trailingAnchor.constraint(equalTo: window.trailingAnchor, constant: -18),
-            label.bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            label.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
-            label.heightAnchor.constraint(lessThanOrEqualToConstant: 76)
+            label.centerXAnchor.constraint(equalTo: window.centerXAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: window.leadingAnchor, constant: 12),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: window.trailingAnchor, constant: -12),
+            label.bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            label.widthAnchor.constraint(lessThanOrEqualTo: window.widthAnchor, multiplier: 0.78),
+            label.heightAnchor.constraint(greaterThanOrEqualToConstant: 34),
+            label.heightAnchor.constraint(lessThanOrEqualToConstant: 62)
         ])
         return label
     }
 
     private func cleanupSubtitleView() {
+        subtitleAttachWorkItem?.cancel()
+        subtitleAttachWorkItem = nil
+        subtitleAttachAttempts = 0
         subtitleView?.removeFromSuperview()
         subtitleView = nil
         activeWindow = nil
@@ -293,10 +311,12 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
         pipStartWorkItem?.cancel()
         pipStartWorkItem = nil
         pipStartAttempts = 0
-        guard let window = currentKeyWindow() else { return }
-        cleanupSubtitleView()
-        activeWindow = window
-        subtitleView = makeSubtitleView(in: window)
+        scheduleSubtitleAttach(after: 0.15)
+    }
+
+    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        subtitleAttachAttempts = 0
+        scheduleSubtitleAttach(after: 0.1)
     }
 
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
@@ -311,10 +331,121 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
         }
     }
 
-    private func currentKeyWindow() -> UIWindow? {
-        UIApplication.shared.connectedScenes
+    private func scheduleSubtitleAttach(after delay: TimeInterval) {
+        subtitleAttachWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.attachSubtitleViewToPiPWindow()
+        }
+        subtitleAttachWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func attachSubtitleViewToPiPWindow() {
+        guard pipController?.isPictureInPictureActive == true || pipStartAttempts == 0 else { return }
+        guard let window = currentPiPWindow() else {
+            subtitleAttachAttempts += 1
+            if subtitleAttachAttempts < 20 {
+                scheduleSubtitleAttach(after: 0.15)
+            } else {
+                Logger.log("Cannot find PiP window for PlayerLayer subtitle.", level: .error)
+            }
+            return
+        }
+
+        if activeWindow === window, let subtitleView {
+            window.bringSubviewToFront(subtitleView)
+            return
+        }
+
+        subtitleView?.removeFromSuperview()
+        activeWindow = window
+        subtitleView = makeSubtitleView(in: window)
+        if let subtitleView {
+            window.bringSubviewToFront(subtitleView)
+        }
+    }
+
+    private func currentPiPWindow() -> UIWindow? {
+        let windows = allApplicationWindows().filter { !$0.isHidden && $0.alpha > 0 }
+        let appKeyWindow = currentKeyWindow()
+        let sourceWindow = sourceView.window
+        let candidates = windows.filter { window in
+            if let sourceWindow, window === sourceWindow {
+                return false
+            }
+            if let appKeyWindow, window === appKeyWindow {
+                return false
+            }
+            return true
+        }
+        return candidates
+            .sorted { scorePiPWindow($0) > scorePiPWindow($1) }
+            .first
+    }
+
+    private func scorePiPWindow(_ window: UIWindow) -> Int {
+        let className = String(describing: type(of: window)).lowercased()
+        var score = Int(window.windowLevel.rawValue)
+        if className.contains("picture") || className.contains("pip") {
+            score += 300
+        }
+        if className.contains("av") || className.contains("pg") || className.contains("host") {
+            score += 120
+        }
+        if !window.isKeyWindow {
+            score += 40
+        }
+        if window.bounds.width < UIScreen.main.bounds.width || window.bounds.height < UIScreen.main.bounds.height {
+            score += 30
+        }
+        return score
+    }
+
+    private func allApplicationWindows() -> [UIWindow] {
+        let sceneWindows = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
-            .first { $0.isKeyWindow }
+        let legacyWindows = (UIApplication.shared.value(forKey: "windows") as? [UIWindow]) ?? []
+
+        var uniqueWindows: [UIWindow] = []
+        for window in sceneWindows + legacyWindows where !uniqueWindows.contains(where: { $0 === window }) {
+            uniqueWindows.append(window)
+        }
+        return uniqueWindows
+    }
+
+    private func currentKeyWindow() -> UIWindow? {
+        allApplicationWindows().first { $0.isKeyWindow }
+    }
+}
+
+private final class PaddedSubtitleLabel: UILabel {
+    var contentInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14) {
+        didSet {
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let baseSize = super.intrinsicContentSize
+        return CGSize(
+            width: baseSize.width + contentInsets.left + contentInsets.right,
+            height: baseSize.height + contentInsets.top + contentInsets.bottom
+        )
+    }
+
+    override func textRect(forBounds bounds: CGRect, limitedToNumberOfLines numberOfLines: Int) -> CGRect {
+        let insetBounds = bounds.inset(by: contentInsets)
+        let textRect = super.textRect(forBounds: insetBounds, limitedToNumberOfLines: numberOfLines)
+        return textRect.inset(by: UIEdgeInsets(
+            top: -contentInsets.top,
+            left: -contentInsets.left,
+            bottom: -contentInsets.bottom,
+            right: -contentInsets.right
+        ))
+    }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: contentInsets))
     }
 }
