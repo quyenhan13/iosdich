@@ -76,3 +76,56 @@ jobs:
           gh release create latest RealtimeTranslator-trollstore.ipa \
             --title "RealtimeTranslator TrollStore IPA" \
             --notes "Direct .ipa build for TrollStore. Install RealtimeTranslator-trollstore.ipa, not the zipped GitHub artifact."
+
+  build-frontboard:
+    name: Build FrontBoard subtitle shell
+    runs-on: macos-latest
+    needs: build
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Checkout theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          ref: master
+          submodules: recursive
+          path: theos
+
+      - name: Checkout Theos iPhoneOS 16.5 SDK
+        uses: actions/checkout@v4
+        with:
+          repository: theos/sdks
+          ref: master
+          sparse-checkout: iPhoneOS16.5.sdk
+          path: theos/sdks
+
+      - name: Install Theos build tools
+        uses: dhinakg/procursus-action@main
+        with:
+          packages: coreutils make xz ldid
+
+      - name: Build FrontBoard TrollStore shell
+        working-directory: FrontBoardTranslator
+        run: |
+          set -e
+          export THEOS="$GITHUB_WORKSPACE/theos"
+          gmake package FINALPACKAGE=1 STRIP=0
+          IPA_PATH=$(find packages -maxdepth 1 -name "*.ipa" -type f | head -n 1)
+          cp "$IPA_PATH" "$GITHUB_WORKSPACE/TransifyrFrontBoard.tipa"
+
+      - name: Upload FrontBoard shell
+        uses: actions/upload-artifact@v4
+        with:
+          name: TransifyrFrontBoard-trollstore-tipa
+          path: TransifyrFrontBoard.tipa
+
+      - name: Attach FrontBoard shell to latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release upload latest TransifyrFrontBoard.tipa --clobber
