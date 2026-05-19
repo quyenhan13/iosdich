@@ -16,7 +16,6 @@
         _store = [TransifyrSubtitleStore new];
         _lastTranslation = @"";
         [self configureView];
-        self.hidden = YES;
     }
     return self;
 }
@@ -58,14 +57,13 @@
 
 - (void)refreshSubtitle {
     NSString *translation = [self.store currentTranslation];
-    BOOL shouldShow = translation.length > 0;
-    if ([translation isEqualToString:self.lastTranslation] && self.hidden == !shouldShow) {
+    if ([translation isEqualToString:self.lastTranslation]) {
         return;
     }
 
     self.lastTranslation = translation;
     self.subtitleLabel.text = translation;
-    self.hidden = !shouldShow;
+    self.hidden = translation.length == 0;
 }
 
 @end
