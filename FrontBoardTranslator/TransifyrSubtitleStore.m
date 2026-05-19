@@ -50,4 +50,8 @@ static NSTimeInterval const TransifyrAudioFreshnessWindow = 2.0;
     return age >= 0 && age <= TransifyrAudioFreshnessWindow;
 }
 
+- (BOOL)hasVisibleActivity {
+    return [self hasActiveAudio] || [self hasFreshTranslation];
+}
+
 @end
