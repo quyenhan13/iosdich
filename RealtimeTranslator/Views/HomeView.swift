@@ -9,6 +9,7 @@ struct HomeView: View {
 
     @State private var alertMessage = ""
     @State private var showAlert = false
+    @State private var broadcastRequested = false
 
     var body: some View {
         NavigationView {
@@ -54,6 +55,9 @@ struct HomeView: View {
         }
         .onChange(of: subtitleManager.currentTranslatedText) { newValue in
             if newValue.isEmpty && subtitleManager.currentText.isEmpty { return }
+            if !systemOverlay.isRunning {
+                systemOverlay.start()
+            }
             systemOverlay.update(text: subtitleManager.currentText, translation: newValue)
         }
         .onChange(of: subtitleManager.currentText) { newValue in
@@ -81,16 +85,16 @@ struct HomeView: View {
         HStack(spacing: 14) {
             Button(action: startBroadcastMode) {
                 HStack(spacing: 8) {
-                    Image(systemName: systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
-                    Text(systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
+                    Image(systemName: broadcastRequested || systemOverlay.isRunning ? "stop.fill" : "record.circle.fill")
+                    Text(broadcastRequested || systemOverlay.isRunning ? "Dừng dịch" : "Bắt đầu thu")
                 }
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .background(systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
+                .background(broadcastRequested || systemOverlay.isRunning ? TransifyrTheme.dangerGradient : TransifyrTheme.accentGradient)
                 .clipShape(Capsule())
-                .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 12, y: 6)
+                .shadow(color: (broadcastRequested || systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 12, y: 6)
             }
 
             Button(action: testOverlay) {
@@ -328,7 +332,8 @@ struct HomeView: View {
     }
 
     private func startBroadcastMode() {
-        if systemOverlay.isRunning {
+        if broadcastRequested || systemOverlay.isRunning {
+            broadcastRequested = false
             subtitleManager.clear()
             systemOverlay.stop()
             return
@@ -346,10 +351,8 @@ struct HomeView: View {
             return
         }
 
-        systemOverlay.start()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)
-        }
+        broadcastRequested = true
+        NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)
     }
 }
 
