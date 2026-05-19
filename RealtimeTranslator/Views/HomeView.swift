@@ -44,6 +44,7 @@ struct HomeView: View {
         .accentColor(.white)
         .onAppear {
             _ = settings.syncSharedSettings()
+            subtitleManager.resetSharedSubtitleCache()
             subtitleManager.startBroadcastSubtitleSync()
             Task {
                 await autoUpdateManager.checkForUpdates(silent: true)
@@ -320,7 +321,7 @@ struct HomeView: View {
 
     private func toggleFloatingOverlay() {
         if systemOverlay.isRunning {
-            subtitleManager.clear()
+            subtitleManager.requestBroadcastStop()
             systemOverlay.stop()
         } else {
             systemOverlay.start()
@@ -350,7 +351,7 @@ struct HomeView: View {
 
     private func startBroadcastMode() {
         if systemOverlay.isRunning {
-            subtitleManager.clear()
+            subtitleManager.requestBroadcastStop()
             systemOverlay.stop()
             return
         }
@@ -367,6 +368,7 @@ struct HomeView: View {
             return
         }
 
+        _ = subtitleManager.beginBroadcastSession()
         systemOverlay.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             NotificationCenter.default.post(name: .transifyrStartBroadcast, object: nil)

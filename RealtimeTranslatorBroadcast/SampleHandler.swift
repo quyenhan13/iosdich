@@ -7,8 +7,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private let client = BroadcastSonioxClient()
     private let converter = BroadcastPCMConverter()
     private let defaults = UserDefaults(suiteName: appGroupID)
+    private var stopRequested = false
+    private var stopPollTimer: Timer?
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
+        stopRequested = false
+        clearSharedSubtitle(updateTimestamp: true)
+        defaults?.set(true, forKey: "broadcast_should_run")
+        if defaults?.string(forKey: "broadcast_session_id") == nil {
+            defaults?.set(UUID().uuidString, forKey: "broadcast_session_id")
+        }
         setBroadcastStatus("starting")
         let sharedSettings = loadSharedSettingsFile()
         let apiKey = firstNonEmpty(
@@ -43,12 +51,42 @@ final class SampleHandler: RPBroadcastSampleHandler {
             self?.setBroadcastStatus(status)
         }
         client.connect(apiKey: apiKey, sourceLang: sourceLang, targetLang: targetLang)
+        stopPollTimer?.invalidate()
+        stopPollTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            _ = self?.stopFromContainingAppIfNeeded()
+        }
     }
 
     private func setBroadcastStatus(_ status: String) {
         defaults?.set(status, forKey: "broadcast_status")
         defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_status_at")
         defaults?.synchronize()
+    }
+
+    private func clearSharedSubtitle(updateTimestamp: Bool) {
+        defaults?.set("", forKey: "broadcast_current_original")
+        defaults?.set("", forKey: "broadcast_current_translation")
+        if updateTimestamp {
+            defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
+        }
+        defaults?.synchronize()
+    }
+
+    private func shouldStopBroadcast() -> Bool {
+        if stopRequested { return false }
+        return defaults?.object(forKey: "broadcast_should_run") as? Bool == false
+    }
+
+    private func stopFromContainingAppIfNeeded() -> Bool {
+        guard shouldStopBroadcast() else { return false }
+        stopRequested = true
+        setBroadcastStatus("stopping")
+        clearSharedSubtitle(updateTimestamp: true)
+        client.disconnect()
+        finishBroadcastWithError(NSError(domain: "TransifyrBroadcast", code: 0, userInfo: [
+            NSLocalizedDescriptionKey: "Đã dừng dịch."
+        ]))
+        return true
     }
 
     private func firstNonEmpty(_ values: String?...) -> String? {
@@ -71,11 +109,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
 
     override func broadcastFinished() {
+        stopPollTimer?.invalidate()
+        stopPollTimer = nil
+        defaults?.set(false, forKey: "broadcast_should_run")
+        clearSharedSubtitle(updateTimestamp: true)
         setBroadcastStatus("finished")
         client.disconnect()
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
+        guard !stopFromContainingAppIfNeeded() else { return }
         guard sampleBufferType == .audioApp else { return }
         guard let pcm = converter.convert(sampleBuffer), !pcm.isEmpty else { return }
         setBroadcastStatus("sending_audio")
@@ -98,6 +141,7 @@ private final class BroadcastSonioxClient {
     var onStatus: ((String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
+        resetSegment()
         onStatus?("connecting")
         let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
         socket = session.webSocketTask(with: url)
@@ -158,6 +202,7 @@ private final class BroadcastSonioxClient {
     func disconnect() {
         configSent = false
         pendingAudio.removeAll()
+        resetSegment()
         socket?.cancel(with: .normalClosure, reason: nil)
         socket = nil
     }
@@ -182,6 +227,7 @@ private final class BroadcastSonioxClient {
     // Translation tokens chỉ xuất hiện sau endpoint và luôn là is_final=true
     private var finalOriginalTokens: [String] = []
     private var finalTranslationTokens: [String] = []
+    private var segmentStartedAt = Date()
 
     private func handleResponse(_ text: String) {
         guard let data = text.data(using: .utf8),
@@ -229,11 +275,25 @@ private final class BroadcastSonioxClient {
             onTranslation?(displayOriginal, displayTranslation)
         }
 
-        if isEndpoint {
-            finalOriginalTokens.removeAll()
-            finalTranslationTokens.removeAll()
+        if isEndpoint || shouldRollSegment(displayOriginal: displayOriginal, displayTranslation: displayTranslation) {
+            resetSegment()
         }
     }
+
+    private func shouldRollSegment(displayOriginal: String, displayTranslation: String) -> Bool {
+        guard !displayTranslation.isEmpty else { return false }
+        if displayTranslation.count >= 120 { return true }
+        if displayOriginal.count >= 160 { return true }
+        if Date().timeIntervalSince(segmentStartedAt) >= 8 { return true }
+        return displayTranslation.range(of: #"[.!?。！？]\s*$"#, options: .regularExpression) != nil
+    }
+
+    private func resetSegment() {
+        finalOriginalTokens.removeAll()
+        finalTranslationTokens.removeAll()
+        segmentStartedAt = Date()
+    }
+
     private func isCommitted(_ token: [String: Any]) -> Bool {
         (token["is_final"] as? Bool ?? false)
             || (token["final"] as? Bool ?? false)

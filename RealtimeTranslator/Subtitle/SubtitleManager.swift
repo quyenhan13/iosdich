@@ -15,6 +15,7 @@ final class SubtitleManager: ObservableObject {
     private var activeTranslationSentence = ""
     private var finalOriginalTokens: [String] = []
     private var finalTranslationTokens: [String] = []
+    private var segmentStartedAt = Date()
 
     private func publishSharedSubtitle(original: String, translation: String) {
         let cleanedTranslation = translation.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -23,6 +24,35 @@ final class SubtitleManager: ObservableObject {
         groupDefaults?.set(cleanedTranslation, forKey: "broadcast_current_translation")
         groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
         groupDefaults?.synchronize()
+    }
+
+    @discardableResult
+    func beginBroadcastSession() -> String {
+        let sessionID = UUID().uuidString
+        clear()
+        clearSharedSubtitle(updateTimestamp: true)
+        groupDefaults?.set(true, forKey: "broadcast_should_run")
+        groupDefaults?.set(sessionID, forKey: "broadcast_session_id")
+        groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_start_requested_at")
+        groupDefaults?.set("starting", forKey: "broadcast_status")
+        groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_status_at")
+        groupDefaults?.synchronize()
+        return sessionID
+    }
+
+    func requestBroadcastStop() {
+        clear()
+        clearSharedSubtitle(updateTimestamp: true)
+        groupDefaults?.set(false, forKey: "broadcast_should_run")
+        groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_stop_requested_at")
+        groupDefaults?.set("stop_requested", forKey: "broadcast_status")
+        groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_status_at")
+        groupDefaults?.synchronize()
+    }
+
+    func resetSharedSubtitleCache() {
+        clear()
+        clearSharedSubtitle(updateTimestamp: true)
     }
 
     func handleSonioxResponse(_ response: SonioxResponse) {
@@ -78,6 +108,18 @@ final class SubtitleManager: ObservableObject {
         activeTranslationSentence = ""
         finalOriginalTokens.removeAll()
         finalTranslationTokens.removeAll()
+        segmentStartedAt = Date()
+    }
+
+    private func clearSharedSubtitle(updateTimestamp: Bool) {
+        groupDefaults?.set("", forKey: "broadcast_current_original")
+        groupDefaults?.set("", forKey: "broadcast_current_translation")
+        if updateTimestamp {
+            let now = Date().timeIntervalSince1970
+            groupDefaults?.set(now, forKey: "broadcast_current_translation_at")
+            lastBroadcastTimestamp = now
+        }
+        groupDefaults?.synchronize()
     }
 
     func startBroadcastSubtitleSync() {
@@ -135,7 +177,7 @@ final class SubtitleManager: ObservableObject {
             }
         }
 
-        if isEndpoint {
+        if isEndpoint || shouldRollSegment(displayOriginal: displayOriginal, displayTranslation: displayTranslation) {
             let translation = displayTranslation
             let original = displayOriginal
             if !translation.isEmpty {
@@ -148,6 +190,12 @@ final class SubtitleManager: ObservableObject {
             }
             finalOriginalTokens.removeAll()
             finalTranslationTokens.removeAll()
+            segmentStartedAt = Date()
+            DispatchQueue.main.async {
+                self.currentText = ""
+                self.currentTranslatedText = ""
+                self.clearSharedSubtitle(updateTimestamp: true)
+            }
         }
 
         if confirmedOriginal.count > 1800 {
@@ -193,6 +241,14 @@ final class SubtitleManager: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalized.count > maxChars else { return normalized }
         return String(normalized.suffix(maxChars)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func shouldRollSegment(displayOriginal: String, displayTranslation: String) -> Bool {
+        guard !displayTranslation.isEmpty else { return false }
+        if displayTranslation.count >= 120 { return true }
+        if displayOriginal.count >= 160 { return true }
+        if Date().timeIntervalSince(segmentStartedAt) >= 8 { return true }
+        return displayTranslation.range(of: #"[.!?。！？]\s*$"#, options: .regularExpression) != nil
     }
 
     private func resetSilenceTimer() {

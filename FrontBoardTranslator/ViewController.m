@@ -1,6 +1,7 @@
 #import "DecoratedAppSceneView.h"
 #import "TransifyrSubtitleView.h"
 #import "ViewController.h"
+#import "UIKitPrivate.h"
 
 @interface ViewController ()
 @property(nonatomic) FBApplicationProcessLaunchTransaction *transaction;
@@ -16,11 +17,15 @@
 }
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return self.forceLandscape ? UIInterfaceOrientationMaskLandscape : UIInterfaceOrientationMaskAll;
+    return self.forceLandscape ? UIInterfaceOrientationMaskLandscapeRight : UIInterfaceOrientationMaskPortrait;
 }
 
 - (BOOL)shouldAutorotate {
     return YES;
+}
+
+- (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation {
+    return self.forceLandscape ? UIInterfaceOrientationLandscapeRight : UIInterfaceOrientationPortrait;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -80,19 +85,33 @@
     [self setNeedsUpdateOfSupportedInterfaceOrientations];
 
     UIInterfaceOrientationMask mask = self.forceLandscape ? UIInterfaceOrientationMaskLandscapeRight : UIInterfaceOrientationMaskPortrait;
-    UIInterfaceOrientation orientation = self.forceLandscape ? UIInterfaceOrientationLandscapeRight : UIInterfaceOrientationPortrait;
+    UIDeviceOrientation deviceOrientation = self.forceLandscape ? UIDeviceOrientationLandscapeLeft : UIDeviceOrientationPortrait;
 
     if (@available(iOS 16.0, *)) {
         UIWindowScene *windowScene = self.view.window.windowScene;
+        if (!windowScene) {
+            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if ([scene isKindOfClass:UIWindowScene.class]) {
+                    windowScene = (UIWindowScene *)scene;
+                    break;
+                }
+            }
+        }
         UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
         [windowScene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
-            [[UIDevice currentDevice] setValue:@(orientation) forKey:@"orientation"];
+            [[UIDevice currentDevice] setValue:@(deviceOrientation) forKey:@"orientation"];
             [UIViewController attemptRotationToDeviceOrientation];
         }];
+        [self.view.window setAutorotates:YES forceUpdateInterfaceOrientation:YES];
+        [[UIDevice currentDevice] setValue:@(deviceOrientation) forKey:@"orientation"];
+        [UIViewController attemptRotationToDeviceOrientation];
     } else {
-        [[UIDevice currentDevice] setValue:@(orientation) forKey:@"orientation"];
+        [self.view.window setAutorotates:YES forceUpdateInterfaceOrientation:YES];
+        [[UIDevice currentDevice] setValue:@(deviceOrientation) forKey:@"orientation"];
         [UIViewController attemptRotationToDeviceOrientation];
     }
+
+    [self.view setNeedsLayout];
 }
 
 @end
