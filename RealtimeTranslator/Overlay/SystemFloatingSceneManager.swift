@@ -2,6 +2,18 @@ import Combine
 import ObjectiveC.runtime
 import UIKit
 
+@_silgen_name("objc_msgSend")
+private func objcMsgSend0(_ target: AnyObject, _ selector: Selector) -> Unmanaged<AnyObject>?
+
+@_silgen_name("objc_msgSend")
+private func objcMsgSend1(_ target: AnyObject, _ selector: Selector, _ arg1: AnyObject?) -> Unmanaged<AnyObject>?
+
+@_silgen_name("objc_msgSend")
+private func objcMsgSend2(_ target: AnyObject, _ selector: Selector, _ arg1: AnyObject?, _ arg2: AnyObject?) -> Unmanaged<AnyObject>?
+
+@_silgen_name("objc_msgSend")
+private func objcMsgSendIntObject(_ target: AnyObject, _ selector: Selector, _ arg1: Int32, _ arg2: AnyObject?) -> Unmanaged<AnyObject>?
+
 final class SystemFloatingSceneManager: ObservableObject {
     static let shared = SystemFloatingSceneManager()
 
@@ -9,6 +21,8 @@ final class SystemFloatingSceneManager: ObservableObject {
 
     private var window: UIWindow?
     private var controller: SystemFloatingSubtitleViewController?
+    private var frontBoardBinder: NSObject?
+    private var frontBoardScene: NSObject?
     private var lastOriginal = ""
     private var lastTranslation = ""
     private var lastFailureReason = ""
@@ -17,17 +31,22 @@ final class SystemFloatingSceneManager: ObservableObject {
     private init() {}
 
     var isSupported: Bool {
-        UserDefaults.standard.bool(forKey: enableKey)
-            && NSClassFromString("UIRootSceneWindow") != nil
-            && (NSClassFromString("FBSSystemService") != nil || NSClassFromString("FBSceneManager") != nil)
+        systemSceneEnabled
+            && NSClassFromString("UIRootWindowScenePresentationBinder") != nil
+            && NSClassFromString("FBSceneManager") != nil
+            && NSClassFromString("FBSMutableSceneDefinition") != nil
+    }
+
+    private var systemSceneEnabled: Bool {
+        UserDefaults.standard.object(forKey: enableKey) as? Bool ?? true
     }
 
     var diagnosticSummary: String {
         [
-            "UIRootSceneWindow": NSClassFromString("UIRootSceneWindow") != nil,
-            "FBSSystemService": NSClassFromString("FBSSystemService") != nil,
+            "UIRootWindowScenePresentationBinder": NSClassFromString("UIRootWindowScenePresentationBinder") != nil,
             "FBSceneManager": NSClassFromString("FBSceneManager") != nil,
             "FBSMutableSceneDefinition": NSClassFromString("FBSMutableSceneDefinition") != nil,
+            "FBSSceneClientIdentity": NSClassFromString("FBSSceneClientIdentity") != nil,
             "UIStatusBarServer": NSClassFromString("UIStatusBarServer") != nil,
             "lastFailure": !lastFailureReason.isEmpty
         ]
@@ -57,6 +76,8 @@ final class SystemFloatingSceneManager: ObservableObject {
             return false
         }
 
+        _ = createFrontBoardScene(from: scene)
+
         let controller = SystemFloatingSubtitleViewController()
         let overlayWindow = makeRootSceneWindow(scene: scene)
         overlayWindow.windowLevel = UIWindow.Level.statusBar + 10000
@@ -79,6 +100,7 @@ final class SystemFloatingSceneManager: ObservableObject {
         window?.isHidden = true
         window = nil
         controller = nil
+        destroyFrontBoardScene()
         isRunning = false
     }
 
@@ -89,14 +111,114 @@ final class SystemFloatingSceneManager: ObservableObject {
     }
 
     private func makeRootSceneWindow(scene: UIWindowScene) -> UIWindow {
-        guard let cls = NSClassFromString("UIRootSceneWindow") as? UIWindow.Type else {
-            return PassthroughSystemWindow(windowScene: scene)
+        return PassthroughSystemWindow(windowScene: scene)
+    }
+
+    private func createFrontBoardScene(from windowScene: UIWindowScene) -> Bool {
+        guard frontBoardBinder == nil, frontBoardScene == nil else { return true }
+        guard
+            let binderClass = NSClassFromString("UIRootWindowScenePresentationBinder") as? NSObject.Type,
+            let definitionClass = NSClassFromString("FBSMutableSceneDefinition") as? NSObject.Type,
+            let sceneIdentityClass = NSClassFromString("FBSSceneIdentity") as? NSObject.Type,
+            let clientIdentityClass = NSClassFromString("FBSSceneClientIdentity") as? NSObject.Type,
+            let specificationClass = NSClassFromString("UIApplicationSceneSpecification") as? NSObject.Type,
+            let parametersClass = NSClassFromString("FBSMutableSceneParameters") as? NSObject.Type,
+            let sceneManagerClass = NSClassFromString("FBSceneManager") as? NSObject.Type
+        else {
+            lastFailureReason = "FrontBoard classes missing."
+            Logger.log("FrontBoard local scene unavailable: \(diagnosticSummary)")
+            return false
         }
 
-        if let window = cls.init(windowScene: scene) as? UIWindow {
-            return window
+        let displayConfiguration = windowScene.value(forKeyPath: "_effectiveSettings.displayConfiguration")
+        guard let allocatedBinder = binderClass.performClassObject(selector: "alloc"),
+              let binder = objcMsgSendIntObject(
+                allocatedBinder,
+                NSSelectorFromString("initWithPriority:displayConfiguration:"),
+                0,
+                displayConfiguration as AnyObject?
+              )?.takeUnretainedValue() as? NSObject else {
+            lastFailureReason = "Could not create presentation binder."
+            Logger.log("FrontBoard binder unavailable: \(diagnosticSummary)")
+            return false
         }
-        return PassthroughSystemWindow(windowScene: scene)
+
+        guard
+            let definition = definitionClass.performClassObject(selector: "definition"),
+            let identity = sceneIdentityClass.performClassObject(
+                selector: "identityForIdentifier:",
+                Bundle.main.bundleIdentifier ?? "com.vteen.RealtimeTranslator"
+            ),
+            let clientIdentity = clientIdentityClass.performClassObject(selector: "localIdentity"),
+            let specification = specificationClass.performClassObject(selector: "specification"),
+            let parameters = parametersClass.performClassObject(selector: "parametersForSpecification:", specification),
+            let sceneManager = sceneManagerClass.performClassObject(selector: "sharedInstance")
+        else {
+            lastFailureReason = "Could not create FrontBoard definition."
+            return false
+        }
+
+        definition.setValue(identity, forKey: "identity")
+        definition.setValue(clientIdentity, forKey: "clientIdentity")
+        definition.setValue(specification, forKey: "specification")
+
+        if let settings = (windowScene.value(forKey: "_effectiveSettings") as? NSObject)?.mutableCopy() as? NSObject {
+            settings.setValue(NSNumber(value: 0), forKey: "deactivationReasons")
+            settings.setValue(NSNumber(value: true), forKey: "foreground")
+            settings.setValue(NSNumber(value: 0), forKey: "interruptionPolicy")
+            parameters.setValue(settings, forKey: "settings")
+        }
+        parameters.setValue(windowScene.value(forKey: "_effectiveUIClientSettings"), forKey: "clientSettings")
+
+        guard let createdScene = sceneManager.performObject(
+            selector: "createSceneWithDefinition:initialParameters:",
+            definition,
+            parameters
+        ) else {
+            lastFailureReason = "FBSceneManager createScene failed."
+            return false
+        }
+
+        _ = binder.performObject(selector: "addScene:", createdScene)
+        frontBoardBinder = binder
+        frontBoardScene = createdScene
+        Logger.log("FrontBoard local scene created: \(diagnosticSummary)")
+        return true
+    }
+
+    private func destroyFrontBoardScene() {
+        guard let scene = frontBoardScene,
+              let sceneManagerClass = NSClassFromString("FBSceneManager") as? NSObject.Type,
+              let sceneManager = sceneManagerClass.performClassObject(selector: "sharedInstance") else {
+            frontBoardScene = nil
+            frontBoardBinder = nil
+            return
+        }
+
+        _ = sceneManager.performObject(selector: "destroyScene:withTransitionContext:", scene, NSNull())
+        frontBoardScene = nil
+        frontBoardBinder = nil
+    }
+}
+
+private extension NSObject {
+    static func performClassObject(selector: String, _ arg1: Any? = nil, _ arg2: Any? = nil) -> NSObject? {
+        (self as AnyObject).performObject(selector: selector, arg1, arg2)
+    }
+}
+
+private extension AnyObject {
+    func performObject(selector: String, _ arg1: Any? = nil, _ arg2: Any? = nil) -> NSObject? {
+        let sel = NSSelectorFromString(selector)
+        guard self.responds(to: sel) else { return nil }
+        if let arg2 {
+            let secondArg: AnyObject? = (arg2 as? NSNull) == nil ? arg2 as AnyObject : nil
+            return objcMsgSend2(self, sel, arg1 as AnyObject?, secondArg)?.takeUnretainedValue() as? NSObject
+        }
+        if let arg1 {
+            return objcMsgSend1(self, sel, arg1 as AnyObject?)?.takeUnretainedValue() as? NSObject
+        }
+        return objcMsgSend0(self, sel)?.takeUnretainedValue() as? NSObject
     }
 }
 
@@ -156,13 +278,7 @@ private final class SystemFloatingSubtitleViewController: UIViewController {
     }
 
     func update(original: String, translation: String) {
-        let showOriginal = AppSettings.shared.showOriginalSubtitle
-        let text: String
-        if showOriginal && !original.isEmpty && !translation.isEmpty {
-            text = "\(original)\n\(translation)"
-        } else {
-            text = translation.isEmpty ? original : translation
-        }
+        let text = translation
 
         label.text = text
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)

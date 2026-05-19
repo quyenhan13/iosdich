@@ -165,16 +165,13 @@ private final class BroadcastSonioxClient {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
         if let errCode = json["error_code"] {
-            // Lỗi API → không làm gì (broadcast sẽ tự tắt)
             _ = errCode
             return
         }
 
         guard let tokens = json["tokens"] as? [[String: Any]] else { return }
 
-        // Non-final tokens reset mỗi response (chỉ lấy từ response này)
-        var nonFinalOriginal: [String] = []
-        var nonFinalTranslation: [String] = []
+        var latestTranslation = ""
         var isEndpoint = false
 
         for token in tokens {
@@ -185,46 +182,21 @@ private final class BroadcastSonioxClient {
             }
             guard !tokenText.isEmpty else { continue }
 
-            let isTranslation = token["translation_status"] as? String == "translation"
-            let isFinal = token["is_final"] as? Bool ?? false
-
-            if isFinal {
-                // Final tokens: append vào buffer tích lũy
-                if isTranslation {
-                    finalTranslationTokens.append(tokenText)
-                } else {
-                    finalOriginalTokens.append(tokenText)
-                }
-            } else {
-                // Non-final: chỉ dùng cho response này
-                if isTranslation {
-                    nonFinalTranslation.append(tokenText)
-                } else {
-                    nonFinalOriginal.append(tokenText)
-                }
+            if token["translation_status"] as? String == "translation" {
+                latestTranslation += tokenText
             }
         }
 
-        // Ghép final + non-final để hiển thị
-        let displayOriginal = trimSubtitleBuffer(
-            finalOriginalTokens.joined() + nonFinalOriginal.joined()
-        )
-        let displayTranslation = trimSubtitleBuffer(
-            finalTranslationTokens.joined() + nonFinalTranslation.joined()
-        )
-
-        if !displayTranslation.isEmpty || !displayOriginal.isEmpty {
-            onTranslation?(displayOriginal, displayTranslation)
+        let displayTranslation = trimSubtitleBuffer(latestTranslation)
+        if !displayTranslation.isEmpty {
+            onTranslation?("", displayTranslation)
         }
 
-        // Khi endpoint xảy ra → gửi signal reset, sau đó xóa buffer final
         if isEndpoint {
-            onTranslation?("", "")
             finalOriginalTokens.removeAll()
             finalTranslationTokens.removeAll()
         }
     }
-
     private func isCommitted(_ token: [String: Any]) -> Bool {
         (token["is_final"] as? Bool ?? false)
             || (token["final"] as? Bool ?? false)

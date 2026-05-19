@@ -16,6 +16,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private var frameIndex: Int64 = 0
     private let frameRate: Int32 = 24
     private var wantsPipStart = false
+    private var acceptsUpdates = false
     private let floatingScene = SystemFloatingSceneManager.shared
 
     override init() {
@@ -37,6 +38,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
 
     func start() {
         if floatingScene.start() {
+            acceptsUpdates = true
             DispatchQueue.main.async {
                 self.isRunning = true
             }
@@ -47,6 +49,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
         do {
             try AudioSessionManager.configureForPlaybackOverlay()
             wantsPipStart = true
+            acceptsUpdates = true
             
             DispatchQueue.main.async {
                 self.isRunning = true
@@ -70,6 +73,12 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
 
     func stop() {
         wantsPipStart = false
+        acceptsUpdates = false
+        hideTextAt = nil
+        currentText = ""
+        floatingScene.update(text: "", translation: "")
+        enqueueFrame(force: true)
+        displayLayer.flushAndRemoveImage()
         floatingScene.stop()
         frameTimer?.invalidate()
         frameTimer = nil
@@ -80,14 +89,10 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     }
 
     func update(text: String, translation: String) {
-        let showOriginal = AppSettings.shared.showOriginalSubtitle
-        if showOriginal && !text.isEmpty && !translation.isEmpty {
-            currentText = "\(text)\n\(translation)"
-        } else {
-            currentText = translation.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        guard acceptsUpdates || floatingScene.isRunning || pipController?.isPictureInPictureActive == true else { return }
+        currentText = translation.trimmingCharacters(in: .whitespacesAndNewlines)
         hideTextAt = currentText.isEmpty ? nil : Date().addingTimeInterval(6)
-        floatingScene.update(text: text, translation: translation)
+        floatingScene.update(text: "", translation: translation)
         enqueueFrame(force: true)
     }
 

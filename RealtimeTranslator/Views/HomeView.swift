@@ -308,7 +308,12 @@ struct HomeView: View {
     }
 
     private func toggleFloatingOverlay() {
-        systemOverlay.isRunning ? systemOverlay.stop() : systemOverlay.start()
+        if systemOverlay.isRunning {
+            subtitleManager.clear()
+            systemOverlay.stop()
+        } else {
+            systemOverlay.start()
+        }
     }
 
     private func testOverlay() {
@@ -324,6 +329,7 @@ struct HomeView: View {
 
     private func startBroadcastMode() {
         if systemOverlay.isRunning {
+            subtitleManager.clear()
             systemOverlay.stop()
             return
         }

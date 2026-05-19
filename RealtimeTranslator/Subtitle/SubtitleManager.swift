@@ -31,14 +31,13 @@ final class SubtitleManager: ObservableObject {
         
         resetSilenceTimer()
         
-        let originalText = words.map { $0.text }.joined(separator: " ")
         let translatedText = words.map { $0.textTranslated ?? "" }.joined(separator: " ")
         
         let isFinal = response.final ?? false
 
         DispatchQueue.main.async {
             if isFinal {
-                let finalLine = SubtitleLine(text: originalText, textTranslated: translatedText, isFinal: true)
+                let finalLine = SubtitleLine(text: "", textTranslated: translatedText, isFinal: true)
                 self.historyLines.append(finalLine)
                 
                 if self.historyLines.count > 15 {
@@ -48,7 +47,7 @@ final class SubtitleManager: ObservableObject {
                 self.currentText = ""
                 self.currentTranslatedText = ""
             } else {
-                self.currentText = originalText
+                self.currentText = ""
                 self.currentTranslatedText = translatedText
             }
         }
@@ -85,8 +84,7 @@ final class SubtitleManager: ObservableObject {
     private func handleSonioxTokens(_ tokens: [SonioxToken]) {
         resetSilenceTimer()
 
-        var provisionalOriginal = ""
-        var provisionalTranslation = ""
+        var latestTranslation = ""
         var isEndpoint = false
 
         for token in tokens {
@@ -98,39 +96,27 @@ final class SubtitleManager: ObservableObject {
             guard !text.isEmpty else { continue }
 
             if token.isTranslation {
-                if token.isCommitted {
-                    finalTranslationTokens.append(text)
-                } else {
-                    provisionalTranslation += text
-                }
-            } else {
-                if token.isCommitted {
-                    finalOriginalTokens.append(text)
-                } else {
-                    provisionalOriginal += text
-                }
+                latestTranslation += text
             }
         }
 
-        let displayOriginal = trimSubtitleBuffer(finalOriginalTokens.joined() + provisionalOriginal)
-        let displayTranslation = trimSubtitleBuffer(finalTranslationTokens.joined() + provisionalTranslation)
+        let displayTranslation = trimSubtitleBuffer(latestTranslation)
 
-        DispatchQueue.main.async {
-            self.currentText = displayOriginal
-            self.currentTranslatedText = displayTranslation
+        if !displayTranslation.isEmpty {
+            DispatchQueue.main.async {
+                self.currentText = ""
+                self.currentTranslatedText = displayTranslation
+            }
         }
 
         if isEndpoint {
-            let original = displayOriginal
             let translation = displayTranslation
             if !translation.isEmpty {
                 DispatchQueue.main.async {
-                    self.historyLines.append(SubtitleLine(text: original, textTranslated: translation, isFinal: true))
+                    self.historyLines.append(SubtitleLine(text: "", textTranslated: translation, isFinal: true))
                     if self.historyLines.count > 15 {
                         self.historyLines.removeFirst()
                     }
-                    self.currentText = ""
-                    self.currentTranslatedText = ""
                 }
             }
             finalOriginalTokens.removeAll()
@@ -208,11 +194,10 @@ final class SubtitleManager: ObservableObject {
 
         // Tín hiệu segment end: cả hai đều rỗng → đưa câu hiện tại vào lịch sử rồi xóa màn hình
         if original.isEmpty && translation.isEmpty {
-            let prevOriginal = currentText
             let prevTranslation = currentTranslatedText
             if !prevTranslation.isEmpty {
                 DispatchQueue.main.async {
-                    self.historyLines.append(SubtitleLine(text: prevOriginal, textTranslated: prevTranslation, isFinal: true))
+                    self.historyLines.append(SubtitleLine(text: "", textTranslated: prevTranslation, isFinal: true))
                     if self.historyLines.count > 15 { self.historyLines.removeFirst() }
                     self.currentText = ""
                     self.currentTranslatedText = ""
@@ -222,7 +207,7 @@ final class SubtitleManager: ObservableObject {
         }
 
         DispatchQueue.main.async {
-            self.currentText = self.trimSubtitleBuffer(original)
+            self.currentText = ""
             self.currentTranslatedText = self.trimSubtitleBuffer(translation)
         }
     }
