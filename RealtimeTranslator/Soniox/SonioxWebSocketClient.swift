@@ -106,7 +106,7 @@ final class SonioxWebSocketClient: ObservableObject {
             numChannels: 1,
             enableEndpointDetection: true,
             enableLanguageIdentification: sourceCode == nil,
-            maxEndpointDelayMs: 160,
+            maxEndpointDelayMs: 80,
             languageHints: sourceCode.map { [$0] },
             translation: translation
         )

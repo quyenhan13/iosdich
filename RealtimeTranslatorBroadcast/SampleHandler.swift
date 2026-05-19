@@ -93,7 +93,7 @@ private final class BroadcastSonioxClient {
             "num_channels": 1,
             "enable_endpoint_detection": true,
             "enable_language_identification": sourceCode == nil,
-            "max_endpoint_delay_ms": 160,
+            "max_endpoint_delay_ms": 80,
             "translation": [
                 "type": "one_way",
                 "target_language": targetLang

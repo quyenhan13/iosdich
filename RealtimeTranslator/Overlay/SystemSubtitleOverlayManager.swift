@@ -16,6 +16,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private var frameIndex: Int64 = 0
     private let frameRate: Int32 = 24
     private var wantsPipStart = false
+    private let floatingScene = SystemFloatingSceneManager.shared
 
     override init() {
         super.init()
@@ -35,6 +36,13 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     }
 
     func start() {
+        if floatingScene.start() {
+            DispatchQueue.main.async {
+                self.isRunning = true
+            }
+            return
+        }
+
         guard isSupported, pipController?.isPictureInPictureActive != true else { return }
         do {
             try AudioSessionManager.configureForPlaybackOverlay()
@@ -62,6 +70,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
 
     func stop() {
         wantsPipStart = false
+        floatingScene.stop()
         frameTimer?.invalidate()
         frameTimer = nil
         pipController?.stopPictureInPicture()
@@ -78,6 +87,7 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
             currentText = translation.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         hideTextAt = currentText.isEmpty ? nil : Date().addingTimeInterval(6)
+        floatingScene.update(text: text, translation: translation)
         enqueueFrame(force: true)
     }
 

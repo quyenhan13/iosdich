@@ -13,6 +13,8 @@ final class SubtitleManager: ObservableObject {
     private var confirmedTranslation = ""
     private var activeOriginalSentence = ""
     private var activeTranslationSentence = ""
+    private var finalOriginalTokens: [String] = []
+    private var finalTranslationTokens: [String] = []
 
     func handleSonioxResponse(_ response: SonioxResponse) {
         if let message = response.errorMessage ?? response.error {
@@ -62,6 +64,8 @@ final class SubtitleManager: ObservableObject {
         confirmedTranslation = ""
         activeOriginalSentence = ""
         activeTranslationSentence = ""
+        finalOriginalTokens.removeAll()
+        finalTranslationTokens.removeAll()
     }
 
     func startBroadcastSubtitleSync() {
@@ -81,40 +85,56 @@ final class SubtitleManager: ObservableObject {
     private func handleSonioxTokens(_ tokens: [SonioxToken]) {
         resetSilenceTimer()
 
-        var committedOriginal = ""
-        var committedTranslation = ""
         var provisionalOriginal = ""
         var provisionalTranslation = ""
+        var isEndpoint = false
 
         for token in tokens {
             let text = token.text ?? ""
-            guard !text.isEmpty, text != "<end>" else { continue }
+            if text == "<end>" {
+                isEndpoint = true
+                continue
+            }
+            guard !text.isEmpty else { continue }
 
             if token.isTranslation {
                 if token.isCommitted {
-                    committedTranslation += text
+                    finalTranslationTokens.append(text)
                 } else {
                     provisionalTranslation += text
                 }
             } else {
                 if token.isCommitted {
-                    committedOriginal += text
+                    finalOriginalTokens.append(text)
                 } else {
                     provisionalOriginal += text
                 }
             }
         }
 
-        let displayOriginal = trimSubtitleBuffer(committedOriginal + provisionalOriginal)
-        let displayTranslation = trimSubtitleBuffer(committedTranslation + provisionalTranslation)
+        let displayOriginal = trimSubtitleBuffer(finalOriginalTokens.joined() + provisionalOriginal)
+        let displayTranslation = trimSubtitleBuffer(finalTranslationTokens.joined() + provisionalTranslation)
 
         DispatchQueue.main.async {
             self.currentText = displayOriginal
             self.currentTranslatedText = displayTranslation
         }
 
-        if shouldFlushSentence(committedTranslation) {
-            // Soniox handles sentence splits
+        if isEndpoint {
+            let original = displayOriginal
+            let translation = displayTranslation
+            if !translation.isEmpty {
+                DispatchQueue.main.async {
+                    self.historyLines.append(SubtitleLine(text: original, textTranslated: translation, isFinal: true))
+                    if self.historyLines.count > 15 {
+                        self.historyLines.removeFirst()
+                    }
+                    self.currentText = ""
+                    self.currentTranslatedText = ""
+                }
+            }
+            finalOriginalTokens.removeAll()
+            finalTranslationTokens.removeAll()
         }
 
         if confirmedOriginal.count > 1800 {

@@ -12,9 +12,15 @@
     <true/>
     <key>com.apple.private.security.no-sandbox</key>
     <true/>
+    <key>get-task-allow</key>
+    <true/>
     <key>com.apple.QuartzCore.displayable-context</key>
     <true/>
     <key>com.apple.QuartzCore.secure-mode</key>
+    <true/>
+    <key>com.apple.private.security.storage.AppBundles</key>
+    <true/>
+    <key>com.apple.private.security.storage.AppDataContainers</key>
     <true/>
     <key>com.apple.frontboard.launchapplications</key>
     <true/>
@@ -38,11 +44,26 @@
     <true/>
     <key>com.apple.springboard.statusbarstyleoverrides.coordinator</key>
     <true/>
+    <key>com.apple.security.exception.iokit-user-client-class</key>
+    <array>
+        <string>IOAccelerator</string>
+        <string>IOGPUDeviceUserClient</string>
+        <string>IOSurfaceRootUserClient</string>
+        <string>IOMobileFramebufferUserClient</string>
+        <string>AppleCLCD</string>
+    </array>
     <key>com.apple.security.exception.mach-lookup.global-name</key>
     <array>
         <string>com.apple.frontboard.systemappservices</string>
         <string>com.apple.UIKit.statusbarserver</string>
         <string>com.apple.springboard.SBRendererService</string>
+        <string>com.apple.sirittsd</string>
+        <string>com.apple.appstored.xpc</string>
+        <string>com.apple.appstored.xpc.request</string>
+        <string>com.apple.PointerUI.pointeruid.service-launching</string>
+        <string>com.apple.proactive.appDirectory</string>
+        <string>com.apple.sessionservices</string>
+        <string>aps-connection-initiate</string>
     </array>
 </dict>
 </plist>
