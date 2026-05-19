@@ -1,5 +1,4 @@
 import Combine
-import Darwin
 import ObjectiveC.runtime
 import UIKit
 
@@ -13,11 +12,13 @@ final class SystemFloatingSceneManager: ObservableObject {
     private var lastOriginal = ""
     private var lastTranslation = ""
     private var lastFailureReason = ""
+    private let enableKey = "enable_system_floating_scene"
 
     private init() {}
 
     var isSupported: Bool {
-        NSClassFromString("UIRootSceneWindow") != nil
+        UserDefaults.standard.bool(forKey: enableKey)
+            && NSClassFromString("UIRootSceneWindow") != nil
             && (NSClassFromString("FBSSystemService") != nil || NSClassFromString("FBSceneManager") != nil)
     }
 
@@ -42,10 +43,8 @@ final class SystemFloatingSceneManager: ObservableObject {
             return true
         }
 
-        bootstrapPrivateShellIfAvailable()
-
         guard isSupported else {
-            lastFailureReason = "Private scene classes are not available."
+            lastFailureReason = "System floating scene is disabled or unavailable."
             Logger.log("System floating scene unavailable: \(diagnosticSummary)")
             return false
         }
@@ -98,26 +97,6 @@ final class SystemFloatingSceneManager: ObservableObject {
             return window
         }
         return PassthroughSystemWindow(windowScene: scene)
-    }
-
-    private func bootstrapPrivateShellIfAvailable() {
-        let paths = [
-            "/System/Library/PrivateFrameworks/FrontBoard.framework/FrontBoard",
-            "/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices",
-            "/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices",
-            "/System/Library/PrivateFrameworks/RunningBoardServices.framework/RunningBoardServices"
-        ]
-
-        for path in paths {
-            _ = dlopen(path, RTLD_NOW)
-        }
-
-        guard let handle = dlopen(nil, RTLD_NOW),
-              let symbol = dlsym(handle, "FBSystemShellInitialize") else { return }
-
-        typealias FBSystemShellInitialize = @convention(c) () -> Void
-        let initialize = unsafeBitCast(symbol, to: FBSystemShellInitialize.self)
-        initialize()
     }
 }
 
