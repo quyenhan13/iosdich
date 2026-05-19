@@ -16,6 +16,7 @@
         _store = [TransifyrSubtitleStore new];
         _lastTranslation = @"";
         [self configureView];
+        self.hidden = YES;
     }
     return self;
 }

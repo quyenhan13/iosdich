@@ -16,6 +16,15 @@ final class SubtitleManager: ObservableObject {
     private var finalOriginalTokens: [String] = []
     private var finalTranslationTokens: [String] = []
 
+    private func publishSharedSubtitle(original: String, translation: String) {
+        let cleanedTranslation = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedTranslation.isEmpty else { return }
+        groupDefaults?.set(original.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "broadcast_current_original")
+        groupDefaults?.set(cleanedTranslation, forKey: "broadcast_current_translation")
+        groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
+        groupDefaults?.synchronize()
+    }
+
     func handleSonioxResponse(_ response: SonioxResponse) {
         if let message = response.errorMessage ?? response.error {
             Logger.log("Soniox lỗi: \(message)", level: .error)
@@ -33,6 +42,8 @@ final class SubtitleManager: ObservableObject {
         
         let originalText = words.map { $0.text }.joined(separator: " ")
         let translatedText = words.map { $0.textTranslated ?? "" }.joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !translatedText.isEmpty else { return }
         
         let isFinal = response.final ?? false
 
@@ -50,6 +61,7 @@ final class SubtitleManager: ObservableObject {
             } else {
                 self.currentText = originalText
                 self.currentTranslatedText = translatedText
+                self.publishSharedSubtitle(original: originalText, translation: translatedText)
             }
         }
     }
@@ -115,17 +127,18 @@ final class SubtitleManager: ObservableObject {
         let displayOriginal = trimSubtitleBuffer((finalOriginalTokens.joined() + nonFinalOriginal))
         let displayTranslation = trimSubtitleBuffer((finalTranslationTokens.joined() + nonFinalTranslation))
 
-        if !displayOriginal.isEmpty || !displayTranslation.isEmpty {
+        if !displayTranslation.isEmpty {
             DispatchQueue.main.async {
                 self.currentText = displayOriginal
                 self.currentTranslatedText = displayTranslation
+                self.publishSharedSubtitle(original: displayOriginal, translation: displayTranslation)
             }
         }
 
         if isEndpoint {
             let translation = displayTranslation
             let original = displayOriginal
-            if !translation.isEmpty || !original.isEmpty {
+            if !translation.isEmpty {
                 DispatchQueue.main.async {
                     self.historyLines.append(SubtitleLine(text: original, textTranslated: translation, isFinal: true))
                     if self.historyLines.count > 15 {

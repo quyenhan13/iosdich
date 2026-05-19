@@ -33,6 +33,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         }
 
         client.onTranslation = { [weak self] original, translation in
+            guard !translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             self?.defaults?.set(original, forKey: "broadcast_current_original")
             self?.defaults?.set(translation, forKey: "broadcast_current_translation")
             self?.defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
@@ -221,7 +222,7 @@ private final class BroadcastSonioxClient {
 
         let displayOriginal = trimSubtitleBuffer(finalOriginalTokens.joined() + nonFinalOriginal)
         let displayTranslation = trimSubtitleBuffer(finalTranslationTokens.joined() + nonFinalTranslation)
-        if !displayOriginal.isEmpty || !displayTranslation.isEmpty {
+        if !displayTranslation.isEmpty {
             onTranslation?(displayOriginal, displayTranslation)
         }
 

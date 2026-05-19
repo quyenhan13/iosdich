@@ -101,6 +101,12 @@
     self.orientationMode = (self.orientationMode + 1) % 3;
     if (self.orientationMode == 0) {
         [self.rotateButton setTitle:@"Auto" forState:UIControlStateNormal];
+        [self setNeedsUpdateOfSupportedInterfaceOrientations];
+        if (@available(iOS 16.0, *)) {
+            UIWindowScene *windowScene = self.view.window.windowScene;
+            UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:UIInterfaceOrientationMaskAll];
+            [windowScene requestGeometryUpdateWithPreferences:preferences errorHandler:nil];
+        }
         [UIViewController attemptRotationToDeviceOrientation];
     } else if (self.orientationMode == 1) {
         [self.rotateButton setTitle:@"Ngang" forState:UIControlStateNormal];
@@ -113,8 +119,23 @@
 }
 
 - (void)forceOrientation:(UIInterfaceOrientation)orientation {
-    [[UIDevice currentDevice] setValue:@(orientation) forKey:@"orientation"];
-    [UIViewController attemptRotationToDeviceOrientation];
+    [self setNeedsUpdateOfSupportedInterfaceOrientations];
+    UIInterfaceOrientationMask mask = UIInterfaceOrientationMaskPortrait;
+    if (UIInterfaceOrientationIsLandscape(orientation)) {
+        mask = UIInterfaceOrientationMaskLandscapeRight;
+    }
+
+    if (@available(iOS 16.0, *)) {
+        UIWindowScene *windowScene = self.view.window.windowScene;
+        UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
+        [windowScene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
+            [[UIDevice currentDevice] setValue:@(orientation) forKey:@"orientation"];
+            [UIViewController attemptRotationToDeviceOrientation];
+        }];
+    } else {
+        [[UIDevice currentDevice] setValue:@(orientation) forKey:@"orientation"];
+        [UIViewController attemptRotationToDeviceOrientation];
+    }
 }
 
 @end
