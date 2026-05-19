@@ -8,7 +8,7 @@ final class SystemFloatingSceneManager: ObservableObject {
 
     private var window: UIWindow?
     private var controller: SystemFloatingSubtitleViewController?
-    private let frontBoardHost = SystemFrontBoardSceneHost.sharedHost()
+    private let frontBoardHost = SystemFrontBoardSceneHost.shared()
     private var lastOriginal = ""
     private var lastTranslation = ""
     private var lastFailureReason = ""
