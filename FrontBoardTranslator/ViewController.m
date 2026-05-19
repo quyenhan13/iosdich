@@ -2,7 +2,6 @@
 #import "TransifyrSubtitleView.h"
 #import "ViewController.h"
 #import "UIKitPrivate.h"
-#include <math.h>
 
 @interface ViewController ()
 @property(nonatomic) FBApplicationProcessLaunchTransaction *transaction;
@@ -52,23 +51,14 @@
     [self.view addSubview:subtitleView];
     [subtitleView start];
     [self addRotateButton];
-    [self applySubtitleOrientationAnimated:NO];
+    [self layoutOverlayControlsAnimated:NO];
 
     // Keep the shell visually transparent; the old drag/title handle created a dark band over SpringBoard.
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    [self applySubtitleOrientationAnimated:NO];
-
-    CGFloat buttonWidth = 76;
-    CGFloat buttonHeight = 36;
-    self.rotateButton.frame = CGRectMake(
-        self.view.bounds.size.width - buttonWidth - 12,
-        self.view.safeAreaInsets.top + 12,
-        buttonWidth,
-        buttonHeight
-    );
+    [self layoutOverlayControlsAnimated:NO];
 }
 
 - (void)addRotateButton {
@@ -84,24 +74,34 @@
     [self.view addSubview:button];
 }
 
-- (void)applySubtitleOrientationAnimated:(BOOL)animated {
-    if (!self.subtitleView) {
+- (void)layoutOverlayControlsAnimated:(BOOL)animated {
+    if (!self.subtitleView || !self.rotateButton) {
         return;
     }
 
     void (^changes)(void) = ^{
         CGSize size = self.view.bounds.size;
-        CGFloat subtitleWidth = self.forceLandscape ? MIN(MAX(size.height - 32, 260), 720) : MIN(MAX(size.width - 32, 260), 520);
-        CGFloat subtitleHeight = 92;
+        UIEdgeInsets safeArea = self.view.safeAreaInsets;
+        BOOL wideLayout = size.width > size.height;
 
+        CGFloat maxSubtitleWidth = wideLayout ? 680 : 520;
+        CGFloat subtitleWidth = MIN(MAX(size.width - 48, 260), maxSubtitleWidth);
+        CGFloat subtitleHeight = wideLayout ? 70 : 92;
+        CGFloat bottomInset = MAX(safeArea.bottom, 12);
+
+        self.subtitleView.transform = CGAffineTransformIdentity;
         self.subtitleView.bounds = CGRectMake(0, 0, subtitleWidth, subtitleHeight);
-        self.subtitleView.transform = self.forceLandscape ? CGAffineTransformMakeRotation((CGFloat)M_PI_2) : CGAffineTransformIdentity;
+        self.subtitleView.center = CGPointMake(size.width / 2.0, size.height - bottomInset - subtitleHeight / 2.0 - 18);
 
-        if (self.forceLandscape) {
-            self.subtitleView.center = CGPointMake(size.width - 72, CGRectGetMidY(self.view.bounds));
-        } else {
-            self.subtitleView.center = CGPointMake(CGRectGetMidX(self.view.bounds), size.height - 120);
-        }
+        CGFloat buttonWidth = 64;
+        CGFloat buttonHeight = 34;
+        self.rotateButton.transform = CGAffineTransformIdentity;
+        self.rotateButton.frame = CGRectMake(
+            size.width - safeArea.right - buttonWidth - 12,
+            safeArea.top + 12,
+            buttonWidth,
+            buttonHeight
+        );
     };
 
     if (animated) {
@@ -115,7 +115,7 @@
     self.forceLandscape = !self.forceLandscape;
     [self.rotateButton setTitle:self.forceLandscape ? @"Doc" : @"Ngang" forState:UIControlStateNormal];
     [self setNeedsUpdateOfSupportedInterfaceOrientations];
-    [self applySubtitleOrientationAnimated:YES];
+    [self layoutOverlayControlsAnimated:YES];
 
     UIInterfaceOrientationMask mask = self.forceLandscape ? UIInterfaceOrientationMaskLandscapeRight : UIInterfaceOrientationMaskPortrait;
     UIDeviceOrientation deviceOrientation = self.forceLandscape ? UIDeviceOrientationLandscapeLeft : UIDeviceOrientationPortrait;
