@@ -7,6 +7,7 @@ static NSTimeInterval const TransifyrSubtitleFreshnessWindow = 4.0;
 
 @interface TransifyrSubtitleStore ()
 @property(nonatomic, strong) NSUserDefaults *defaults;
+@property(nonatomic, assign) NSTimeInterval lastConsumedTimestamp;
 @end
 
 @implementation TransifyrSubtitleStore
@@ -26,6 +27,16 @@ static NSTimeInterval const TransifyrSubtitleFreshnessWindow = 4.0;
 
     NSString *translation = [self.defaults stringForKey:TransifyrTranslationKey] ?: @"";
     return [translation stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+- (NSString *)consumeNewTranslation {
+    NSTimeInterval timestamp = [self.defaults doubleForKey:TransifyrTimestampKey];
+    if (timestamp <= self.lastConsumedTimestamp || ![self hasFreshTranslation]) {
+        return @"";
+    }
+
+    self.lastConsumedTimestamp = timestamp;
+    return [self currentTranslation];
 }
 
 - (BOOL)hasFreshTranslation {

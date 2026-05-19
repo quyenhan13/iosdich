@@ -6,6 +6,7 @@
 @property(nonatomic, strong) TransifyrSubtitleStore *store;
 @property(nonatomic, strong, nullable) NSTimer *timer;
 @property(nonatomic, copy) NSString *lastTranslation;
+@property(nonatomic, strong, nullable) NSTimer *hideTimer;
 @end
 
 @implementation TransifyrSubtitleView
@@ -53,17 +54,28 @@
 - (void)stop {
     [self.timer invalidate];
     self.timer = nil;
+    [self.hideTimer invalidate];
+    self.hideTimer = nil;
 }
 
 - (void)refreshSubtitle {
-    NSString *translation = [self.store currentTranslation];
-    if ([translation isEqualToString:self.lastTranslation]) {
+    NSString *translation = [self.store consumeNewTranslation];
+    if (translation.length == 0 || [translation isEqualToString:self.lastTranslation]) {
         return;
     }
 
     self.lastTranslation = translation;
     self.subtitleLabel.text = translation;
-    self.hidden = translation.length == 0;
+    self.hidden = NO;
+
+    [self.hideTimer invalidate];
+    self.hideTimer = [NSTimer scheduledTimerWithTimeInterval:4.0 target:self selector:@selector(hideSubtitle) userInfo:nil repeats:NO];
+}
+
+- (void)hideSubtitle {
+    self.subtitleLabel.text = @"";
+    self.lastTranslation = @"";
+    self.hidden = YES;
 }
 
 @end

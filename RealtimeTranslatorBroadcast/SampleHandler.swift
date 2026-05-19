@@ -93,6 +93,7 @@ private final class BroadcastSonioxClient {
     private var pendingAudio: [Data] = []
     private var configSent = false
     private var configPayload: String = ""
+    private let automaticLanguageHints = ["en", "vi", "zh", "ja", "ko", "th", "id", "es", "fr", "de", "ru"]
     var onTranslation: ((String, String) -> Void)?
     var onStatus: ((String) -> Void)?
 
@@ -118,6 +119,8 @@ private final class BroadcastSonioxClient {
         ]
         if let sourceCode {
             payload["language_hints"] = [sourceCode]
+        } else {
+            payload["language_hints"] = automaticLanguageHints
         }
 
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
