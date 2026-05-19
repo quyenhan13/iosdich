@@ -71,10 +71,7 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
 
     private func attachSourceViewIfNeeded() {
         guard sourceView.superview == nil else { return }
-        guard let window = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .flatMap({ $0.windows })
-            .first(where: { $0.isKeyWindow }) ?? UIApplication.shared.windows.first else {
+        guard let window = currentKeyWindow() else {
             Logger.log("No window available for PlayerLayer PiP source view.", level: .error)
             return
         }
@@ -253,7 +250,6 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
 
         let duration = CMTime(seconds: 3600, preferredTimescale: 600)
         track.insertEmptyTimeRange(CMTimeRange(start: .zero, duration: duration))
-        track.naturalSize = CGSize(width: 320, height: 180)
         return composition
     }
 
@@ -297,7 +293,7 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
         pipStartWorkItem?.cancel()
         pipStartWorkItem = nil
         pipStartAttempts = 0
-        guard let window = UIApplication.shared.windows.first else { return }
+        guard let window = currentKeyWindow() else { return }
         cleanupSubtitleView()
         activeWindow = window
         subtitleView = makeSubtitleView(in: window)
@@ -313,5 +309,12 @@ final class PlayerLayerPiPSubtitleManager: NSObject, AVPictureInPictureControlle
         if pipStartAttempts < 12 {
             schedulePiPStartAttempt(after: 0.4)
         }
+    }
+
+    private func currentKeyWindow() -> UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
     }
 }
