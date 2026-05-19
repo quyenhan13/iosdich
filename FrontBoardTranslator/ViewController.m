@@ -11,6 +11,7 @@
 @property(nonatomic, strong) UIButton *rotateButton;
 @property(nonatomic, strong) TransifyrSubtitleView *subtitleView;
 @property(nonatomic, assign) BOOL forceLandscape;
+@property(nonatomic, assign) NSInteger orientationMode;
 @property(nonatomic, assign) BOOL manualLandscapeFallback;
 @property(nonatomic, assign) CGSize lastLayoutSize;
 @property(nonatomic, assign) CGPoint panStartCenter;
@@ -27,7 +28,14 @@
 }
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return self.forceLandscape ? UIInterfaceOrientationMaskLandscapeRight : UIInterfaceOrientationMaskPortrait;
+    switch (self.orientationMode) {
+        case 1:
+            return UIInterfaceOrientationMaskLandscapeRight;
+        case 2:
+            return UIInterfaceOrientationMaskLandscapeLeft;
+        default:
+            return UIInterfaceOrientationMaskPortrait;
+    }
 }
 
 - (BOOL)shouldAutorotate {
@@ -35,7 +43,14 @@
 }
 
 - (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation {
-    return self.forceLandscape ? UIInterfaceOrientationLandscapeRight : UIInterfaceOrientationPortrait;
+    switch (self.orientationMode) {
+        case 1:
+            return UIInterfaceOrientationLandscapeRight;
+        case 2:
+            return UIInterfaceOrientationLandscapeLeft;
+        default:
+            return UIInterfaceOrientationPortrait;
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -50,6 +65,7 @@
     self.view.opaque = NO;
     self.title = nil;
     self.forceLandscape = NO;
+    self.orientationMode = 0;
     self.manualLandscapeFallback = NO;
     self.lastLayoutSize = CGSizeZero;
     self.panStartCenter = CGPointZero;
@@ -229,9 +245,13 @@
             horizontalSafeWidth = size.width;
         }
         CGFloat homeIndicatorInset = wideLayout ? MAX(safeArea.bottom, MAX(safeArea.left, safeArea.right)) : safeArea.bottom;
-        CGFloat maxSubtitleWidth = wideLayout ? 680 : 520;
-        CGFloat subtitleWidth = MIN(MAX(horizontalSafeWidth - 48, 260), maxSubtitleWidth);
-        CGFloat subtitleHeight = wideLayout ? 70 : 92;
+        CGFloat maxSubtitleWidth = wideLayout ? MIN(size.width * 0.72, 700) : MIN(size.width * 0.86, 540);
+        CGFloat minSubtitleWidth = MIN(horizontalSafeWidth - 24, wideLayout ? 300 : 260);
+        minSubtitleWidth = MAX(minSubtitleWidth, 220);
+        CGFloat subtitleWidth = MIN(MAX(horizontalSafeWidth - 48, minSubtitleWidth), maxSubtitleWidth);
+        CGFloat subtitleHeight = wideLayout
+            ? MIN(MAX(size.height * 0.105, 52), 66)
+            : MIN(MAX(size.height * 0.085, 64), 86);
         CGFloat bottomInset = MAX(homeIndicatorInset, 12);
         CGFloat centerX = safeArea.left + horizontalSafeWidth / 2.0;
         CGFloat topInset = MAX(safeArea.top, 12);
@@ -289,7 +309,8 @@
         CGFloat landscapeHeight = size.width;
         self.overlayContainer.bounds = CGRectMake(0, 0, landscapeWidth, landscapeHeight);
         self.overlayContainer.center = CGPointMake(size.width / 2.0, size.height / 2.0);
-        self.overlayContainer.transform = CGAffineTransformMakeRotation((CGFloat)M_PI_2);
+        CGFloat angle = self.orientationMode == 2 ? (CGFloat)-M_PI_2 : (CGFloat)M_PI_2;
+        self.overlayContainer.transform = CGAffineTransformMakeRotation(angle);
     } else {
         self.overlayContainer.transform = CGAffineTransformIdentity;
         self.overlayContainer.frame = self.view.bounds;
@@ -297,14 +318,22 @@
 }
 
 - (void)toggleOrientation {
-    self.forceLandscape = !self.forceLandscape;
+    self.orientationMode = (self.orientationMode + 1) % 3;
+    self.forceLandscape = self.orientationMode != 0;
     self.manualLandscapeFallback = NO;
-    [self.rotateButton setTitle:self.forceLandscape ? @"Doc" : @"Ngang" forState:UIControlStateNormal];
+    [self updateRotateButtonTitle];
     [self setNeedsUpdateOfSupportedInterfaceOrientations];
     [self layoutOverlayControlsAnimated:YES];
 
-    UIInterfaceOrientationMask mask = self.forceLandscape ? UIInterfaceOrientationMaskLandscapeRight : UIInterfaceOrientationMaskPortrait;
-    UIDeviceOrientation deviceOrientation = self.forceLandscape ? UIDeviceOrientationLandscapeLeft : UIDeviceOrientationPortrait;
+    UIInterfaceOrientationMask mask = UIInterfaceOrientationMaskPortrait;
+    UIDeviceOrientation deviceOrientation = UIDeviceOrientationPortrait;
+    if (self.orientationMode == 1) {
+        mask = UIInterfaceOrientationMaskLandscapeRight;
+        deviceOrientation = UIDeviceOrientationLandscapeLeft;
+    } else if (self.orientationMode == 2) {
+        mask = UIInterfaceOrientationMaskLandscapeLeft;
+        deviceOrientation = UIDeviceOrientationLandscapeRight;
+    }
 
     if (@available(iOS 16.0, *)) {
         UIWindowScene *windowScene = self.view.window.windowScene;
@@ -347,6 +376,16 @@
         self.manualLandscapeFallback = !sceneIsLandscape;
         [self layoutOverlayControlsAnimated:YES];
     });
+}
+
+- (void)updateRotateButtonTitle {
+    NSString *title = @"Ngang";
+    if (self.orientationMode == 1) {
+        title = @"Trai";
+    } else if (self.orientationMode == 2) {
+        title = @"Doc";
+    }
+    [self.rotateButton setTitle:title forState:UIControlStateNormal];
 }
 
 @end
