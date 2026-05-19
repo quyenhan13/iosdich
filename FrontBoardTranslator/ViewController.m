@@ -9,6 +9,12 @@
 @property(nonatomic, strong) UIButton *rotateButton;
 @property(nonatomic, strong) TransifyrSubtitleView *subtitleView;
 @property(nonatomic, assign) BOOL forceLandscape;
+@property(nonatomic, assign) CGSize lastLayoutSize;
+@property(nonatomic, assign) CGPoint panStartCenter;
+@property(nonatomic, assign) CGFloat lastSubtitleDefaultCenterX;
+@property(nonatomic, assign) CGFloat lastSubtitleTopCenterY;
+@property(nonatomic, assign) CGFloat lastSubtitleBottomCenterY;
+@property(nonatomic, assign) BOOL draggingSubtitle;
 @end
 
 @implementation ViewController
@@ -41,6 +47,12 @@
     self.view.opaque = NO;
     self.title = nil;
     self.forceLandscape = NO;
+    self.lastLayoutSize = CGSizeZero;
+    self.panStartCenter = CGPointZero;
+    self.lastSubtitleDefaultCenterX = 0;
+    self.lastSubtitleTopCenterY = 0;
+    self.lastSubtitleBottomCenterY = 0;
+    self.draggingSubtitle = NO;
 
     CGFloat width = MIN(UIScreen.mainScreen.bounds.size.width - 32, 520);
     CGFloat height = 92;
@@ -50,15 +62,26 @@
     self.subtitleView = subtitleView;
     [self.view addSubview:subtitleView];
     [subtitleView start];
+    [self addSubtitlePanGesture];
     [self addRotateButton];
     [self layoutOverlayControlsAnimated:NO];
+    [self startFollowingSceneLayout];
 
     // Keep the shell visually transparent; the old drag/title handle created a dark band over SpringBoard.
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     [self layoutOverlayControlsAnimated:NO];
+}
+
+- (void)viewSafeAreaInsetsDidChange {
+    [super viewSafeAreaInsetsDidChange];
+    [self layoutOverlayControlsAnimated:YES];
 }
 
 - (void)addRotateButton {
@@ -74,38 +97,169 @@
     [self.view addSubview:button];
 }
 
+- (void)addSubtitlePanGesture {
+    self.subtitleView.userInteractionEnabled = YES;
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleSubtitlePan:)];
+    [self.subtitleView addGestureRecognizer:pan];
+}
+
+- (NSString *)subtitleAnchorDefaultsKey {
+    CGSize size = self.view.bounds.size;
+    BOOL wideLayout = size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
+    return wideLayout ? @"TransifyrSubtitleAnchorLandscape" : @"TransifyrSubtitleAnchorPortrait";
+}
+
+- (BOOL)subtitleShouldAnchorTop {
+    NSString *anchor = [NSUserDefaults.standardUserDefaults stringForKey:[self subtitleAnchorDefaultsKey]];
+    return [anchor isEqualToString:@"top"];
+}
+
+- (void)saveSubtitleAnchorTop:(BOOL)anchorTop {
+    [NSUserDefaults.standardUserDefaults setObject:(anchorTop ? @"top" : @"bottom") forKey:[self subtitleAnchorDefaultsKey]];
+}
+
+- (void)clampSubtitleToVisibleAreaAnimated:(BOOL)animated {
+    UIEdgeInsets safeArea = self.view.safeAreaInsets;
+    CGRect visibleBounds = UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(
+        safeArea.top + 8,
+        safeArea.left + 8,
+        safeArea.bottom + 8,
+        safeArea.right + 8
+    ));
+    if (CGRectGetWidth(visibleBounds) <= 1 || CGRectGetHeight(visibleBounds) <= 1) {
+        visibleBounds = CGRectInset(self.view.bounds, 8, 8);
+    }
+
+    CGRect frame = self.subtitleView.frame;
+    if (CGRectGetWidth(visibleBounds) <= frame.size.width) {
+        frame.origin.x = CGRectGetMidX(visibleBounds) - frame.size.width / 2.0;
+    } else {
+        frame.origin.x = MIN(MAX(frame.origin.x, CGRectGetMinX(visibleBounds)), CGRectGetMaxX(visibleBounds) - frame.size.width);
+    }
+
+    if (CGRectGetHeight(visibleBounds) <= frame.size.height) {
+        frame.origin.y = CGRectGetMidY(visibleBounds) - frame.size.height / 2.0;
+    } else {
+        frame.origin.y = MIN(MAX(frame.origin.y, CGRectGetMinY(visibleBounds)), CGRectGetMaxY(visibleBounds) - frame.size.height);
+    }
+
+    void (^changes)(void) = ^{
+        self.subtitleView.frame = frame;
+    };
+
+    if (animated) {
+        [UIView animateWithDuration:0.2 animations:changes];
+    } else {
+        changes();
+    }
+}
+
+- (void)handleSubtitlePan:(UIPanGestureRecognizer *)recognizer {
+    switch (recognizer.state) {
+        case UIGestureRecognizerStateBegan:
+            self.draggingSubtitle = YES;
+            self.panStartCenter = self.subtitleView.center;
+            break;
+        case UIGestureRecognizerStateChanged: {
+            CGPoint translation = [recognizer translationInView:self.view];
+            self.subtitleView.center = CGPointMake(self.lastSubtitleDefaultCenterX, self.panStartCenter.y + translation.y);
+            [self clampSubtitleToVisibleAreaAnimated:NO];
+            break;
+        }
+        case UIGestureRecognizerStateEnded:
+        case UIGestureRecognizerStateCancelled:
+        case UIGestureRecognizerStateFailed: {
+            CGFloat midpoint = (self.lastSubtitleTopCenterY + self.lastSubtitleBottomCenterY) / 2.0;
+            BOOL anchorTop = self.subtitleView.center.y < midpoint;
+            self.draggingSubtitle = NO;
+            [self saveSubtitleAnchorTop:anchorTop];
+            [self layoutOverlayControlsAnimated:YES];
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+- (void)startFollowingSceneLayout {
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sceneLayoutDidChange:) name:UIDeviceOrientationDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sceneLayoutDidChange:) name:UIApplicationDidChangeStatusBarOrientationNotification object:nil];
+}
+
+- (void)sceneLayoutDidChange:(NSNotification *)notification {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.draggingSubtitle) {
+            return;
+        }
+        [self layoutOverlayControlsAnimated:YES];
+    });
+}
+
 - (void)layoutOverlayControlsAnimated:(BOOL)animated {
     if (!self.subtitleView || !self.rotateButton) {
+        return;
+    }
+    if (self.draggingSubtitle) {
         return;
     }
 
     void (^changes)(void) = ^{
         CGSize size = self.view.bounds.size;
+        if (size.width <= 1 || size.height <= 1) {
+            return;
+        }
         UIEdgeInsets safeArea = self.view.safeAreaInsets;
-        BOOL wideLayout = size.width > size.height;
+        BOOL wideLayout = size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
 
+        CGFloat horizontalSafeWidth = size.width - safeArea.left - safeArea.right;
+        if (horizontalSafeWidth <= 1) {
+            horizontalSafeWidth = size.width;
+        }
+        CGFloat homeIndicatorInset = wideLayout ? MAX(safeArea.bottom, MAX(safeArea.left, safeArea.right)) : safeArea.bottom;
         CGFloat maxSubtitleWidth = wideLayout ? 680 : 520;
-        CGFloat subtitleWidth = MIN(MAX(size.width - 48, 260), maxSubtitleWidth);
+        CGFloat subtitleWidth = MIN(MAX(horizontalSafeWidth - 48, 260), maxSubtitleWidth);
         CGFloat subtitleHeight = wideLayout ? 70 : 92;
-        CGFloat bottomInset = MAX(safeArea.bottom, 12);
+        CGFloat bottomInset = MAX(homeIndicatorInset, 12);
+        CGFloat centerX = safeArea.left + horizontalSafeWidth / 2.0;
+        CGFloat topInset = MAX(safeArea.top, 12);
+        CGFloat topCenterY = topInset + subtitleHeight / 2.0 + 18;
+        CGFloat bottomCenterY = size.height - bottomInset - subtitleHeight / 2.0 - 18;
 
         self.subtitleView.transform = CGAffineTransformIdentity;
         self.subtitleView.bounds = CGRectMake(0, 0, subtitleWidth, subtitleHeight);
-        self.subtitleView.center = CGPointMake(size.width / 2.0, size.height - bottomInset - subtitleHeight / 2.0 - 18);
+        self.lastSubtitleDefaultCenterX = centerX;
+        self.lastSubtitleTopCenterY = topCenterY;
+        self.lastSubtitleBottomCenterY = bottomCenterY;
+        BOOL anchorTop = [self subtitleShouldAnchorTop];
+        self.subtitleView.center = CGPointMake(centerX, anchorTop ? topCenterY : bottomCenterY);
+        [self clampSubtitleToVisibleAreaAnimated:NO];
 
         CGFloat buttonWidth = 64;
         CGFloat buttonHeight = 34;
+        CGFloat buttonY = anchorTop
+            ? CGRectGetMaxY(self.subtitleView.frame) + 8
+            : safeArea.top + 12;
+        CGFloat maxButtonY = size.height - safeArea.bottom - buttonHeight - 12;
+        CGFloat minButtonY = safeArea.top + 12;
+        if (maxButtonY < minButtonY) {
+            buttonY = minButtonY;
+        } else {
+            buttonY = MIN(MAX(buttonY, minButtonY), maxButtonY);
+        }
         self.rotateButton.transform = CGAffineTransformIdentity;
         self.rotateButton.frame = CGRectMake(
             size.width - safeArea.right - buttonWidth - 12,
-            safeArea.top + 12,
+            buttonY,
             buttonWidth,
             buttonHeight
         );
     };
 
+    BOOL sizeChanged = !CGSizeEqualToSize(self.lastLayoutSize, self.view.bounds.size);
+    self.lastLayoutSize = self.view.bounds.size;
+
     if (animated) {
-        [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:changes completion:nil];
+        [UIView animateWithDuration:sizeChanged ? 0.25 : 0.16 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:changes completion:nil];
     } else {
         changes();
     }
