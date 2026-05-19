@@ -95,6 +95,20 @@ struct HomeView: View {
                 .shadow(color: (systemOverlay.isRunning ? Color.red : TransifyrTheme.accent).opacity(0.4), radius: 12, y: 6)
             }
 
+            Button(action: startPiPOnly) {
+                HStack(spacing: 8) {
+                    Image(systemName: "pip.enter")
+                    Text("PiP")
+                }
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+            }
+
             Button(action: testOverlay) {
                 HStack(spacing: 8) {
                     Image(systemName: "play.rectangle.fill")
@@ -347,6 +361,14 @@ struct HomeView: View {
             text: "Hello! This is a real-time subtitle translation test overlay.",
             translation: "Xin chào! Đây là phụ đề dịch thuật thời gian thực thử nghiệm."
         )
+    }
+
+    private func startPiPOnly() {
+        if systemOverlay.isRunning {
+            systemOverlay.stop()
+        }
+        PlayerLayerPiPSubtitleManager.shared.update(translation: "Đang thử phụ đề nổi bằng PiP.")
+        PlayerLayerPiPSubtitleManager.shared.start()
     }
 
     private func startBroadcastMode() {

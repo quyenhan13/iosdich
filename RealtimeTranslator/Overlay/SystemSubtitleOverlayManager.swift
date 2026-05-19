@@ -17,6 +17,8 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     private let frameRate: Int32 = 24
     private var wantsPipStart = false
     private var acceptsUpdates = false
+    private var pipStartAttempts = 0
+    private var pipStartWorkItem: DispatchWorkItem?
     private let floatingScene = SystemFloatingSceneManager.shared
 
     override init() {
@@ -45,24 +47,28 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
             return
         }
 
+        startPiPFallback()
+    }
+
+    func startPiPOnly() {
+        startPiPFallback()
+    }
+
+    private func startPiPFallback() {
         guard isSupported, pipController?.isPictureInPictureActive != true else { return }
         do {
             try AudioSessionManager.configureForPlaybackOverlay()
             wantsPipStart = true
             acceptsUpdates = true
-            
+            pipStartAttempts = 0
+
             DispatchQueue.main.async {
                 self.isRunning = true
             }
-            
-            // Enqueue sample buffer lập tức để kích hoạt khả năng bắt đầu PiP
+
             enqueueFrame(force: true)
             startFrameTimer()
-            
-            // Thử khởi chạy PiP ngay lập tức
-            if pipController?.isPictureInPicturePossible == true {
-                pipController?.startPictureInPicture()
-            }
+            schedulePiPStartAttempt(after: 0.15)
         } catch {
             Logger.log("Không thể bật phụ đề nổi: \(error.localizedDescription)", level: .error)
             DispatchQueue.main.async {
@@ -74,6 +80,9 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
     func stop() {
         wantsPipStart = false
         acceptsUpdates = false
+        pipStartWorkItem?.cancel()
+        pipStartWorkItem = nil
+        pipStartAttempts = 0
         hideTextAt = nil
         currentText = ""
         floatingScene.update(text: "", translation: "")
@@ -102,6 +111,35 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
             self?.enqueueFrame(force: false)
         }
         frameTimer?.tolerance = 0.01
+    }
+
+    private func schedulePiPStartAttempt(after delay: TimeInterval) {
+        pipStartWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.attemptStartPiP()
+        }
+        pipStartWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func attemptStartPiP() {
+        guard wantsPipStart, pipController?.isPictureInPictureActive != true else { return }
+        enqueueFrame(force: true)
+
+        if pipController?.isPictureInPicturePossible == true {
+            Logger.log("PiP possible, starting picture-in-picture.")
+            pipController?.startPictureInPicture()
+            return
+        }
+
+        pipStartAttempts += 1
+        guard pipStartAttempts < 12 else {
+            Logger.log("PiP not possible after \(pipStartAttempts) attempts.", level: .error)
+            return
+        }
+
+        Logger.log("PiP not possible yet, retry \(pipStartAttempts).")
+        schedulePiPStartAttempt(after: 0.25)
     }
 
     private func enqueueFrame(force: Bool) {
@@ -288,6 +326,9 @@ final class SystemSubtitleOverlayManager: NSObject, ObservableObject {
 
 extension SystemSubtitleOverlayManager: AVPictureInPictureControllerDelegate {
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        pipStartWorkItem?.cancel()
+        pipStartWorkItem = nil
+        pipStartAttempts = 0
         DispatchQueue.main.async {
             self.isRunning = true
         }
@@ -301,6 +342,9 @@ extension SystemSubtitleOverlayManager: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
         Logger.log("PiP failed to start: \(error.localizedDescription)", level: .error)
+        if wantsPipStart, pipStartAttempts < 12 {
+            schedulePiPStartAttempt(after: 0.4)
+        }
         DispatchQueue.main.async {
             self.isRunning = false
         }

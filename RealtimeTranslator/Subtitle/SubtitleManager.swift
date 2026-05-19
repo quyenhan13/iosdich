@@ -20,6 +20,7 @@ final class SubtitleManager: ObservableObject {
     private func publishSharedSubtitle(original: String, translation: String) {
         let cleanedTranslation = translation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedTranslation.isEmpty else { return }
+        PlayerLayerPiPSubtitleManager.shared.update(translation: cleanedTranslation)
         groupDefaults?.set(original.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "broadcast_current_original")
         groupDefaults?.set(cleanedTranslation, forKey: "broadcast_current_translation")
         groupDefaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
@@ -112,6 +113,7 @@ final class SubtitleManager: ObservableObject {
     }
 
     private func clearSharedSubtitle(updateTimestamp: Bool) {
+        PlayerLayerPiPSubtitleManager.shared.update(translation: "")
         groupDefaults?.set("", forKey: "broadcast_current_original")
         groupDefaults?.set("", forKey: "broadcast_current_translation")
         if updateTimestamp {
