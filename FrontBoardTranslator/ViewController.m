@@ -2,13 +2,16 @@
 #import "TransifyrSubtitleView.h"
 #import "ViewController.h"
 #import "UIKitPrivate.h"
+#include <math.h>
 
 @interface ViewController ()
 @property(nonatomic) FBApplicationProcessLaunchTransaction *transaction;
 @property(nonatomic) UIScenePresentationManager *presentationManager;
+@property(nonatomic, strong) UIView *overlayContainer;
 @property(nonatomic, strong) UIButton *rotateButton;
 @property(nonatomic, strong) TransifyrSubtitleView *subtitleView;
 @property(nonatomic, assign) BOOL forceLandscape;
+@property(nonatomic, assign) BOOL manualLandscapeFallback;
 @property(nonatomic, assign) CGSize lastLayoutSize;
 @property(nonatomic, assign) CGPoint panStartCenter;
 @property(nonatomic, assign) CGFloat lastSubtitleDefaultCenterX;
@@ -47,6 +50,7 @@
     self.view.opaque = NO;
     self.title = nil;
     self.forceLandscape = NO;
+    self.manualLandscapeFallback = NO;
     self.lastLayoutSize = CGSizeZero;
     self.panStartCenter = CGPointZero;
     self.lastSubtitleDefaultCenterX = 0;
@@ -56,11 +60,18 @@
 
     CGFloat width = MIN(UIScreen.mainScreen.bounds.size.width - 32, 520);
     CGFloat height = 92;
+    UIView *container = [[UIView alloc] initWithFrame:self.view.bounds];
+    container.backgroundColor = UIColor.clearColor;
+    container.opaque = NO;
+    container.autoresizingMask = UIViewAutoresizingNone;
+    self.overlayContainer = container;
+    [self.view addSubview:container];
+
     CGRect frame = CGRectMake(0, 0, width, height);
     TransifyrSubtitleView *subtitleView = [[TransifyrSubtitleView alloc] initWithFrame:frame];
     subtitleView.autoresizingMask = UIViewAutoresizingNone;
     self.subtitleView = subtitleView;
-    [self.view addSubview:subtitleView];
+    [self.overlayContainer addSubview:subtitleView];
     [subtitleView start];
     [self addSubtitlePanGesture];
     [self addRotateButton];
@@ -94,7 +105,7 @@
     [button setTitle:@"Ngang" forState:UIControlStateNormal];
     [button addTarget:self action:@selector(toggleOrientation) forControlEvents:UIControlEventTouchUpInside];
     self.rotateButton = button;
-    [self.view addSubview:button];
+    [self.overlayContainer addSubview:button];
 }
 
 - (void)addSubtitlePanGesture {
@@ -104,8 +115,8 @@
 }
 
 - (NSString *)subtitleAnchorDefaultsKey {
-    CGSize size = self.view.bounds.size;
-    BOOL wideLayout = size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
+    CGSize size = self.overlayContainer.bounds.size;
+    BOOL wideLayout = self.manualLandscapeFallback || size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
     return wideLayout ? @"TransifyrSubtitleAnchorLandscape" : @"TransifyrSubtitleAnchorPortrait";
 }
 
@@ -120,14 +131,14 @@
 
 - (void)clampSubtitleToVisibleAreaAnimated:(BOOL)animated {
     UIEdgeInsets safeArea = self.view.safeAreaInsets;
-    CGRect visibleBounds = UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(
+    CGRect visibleBounds = UIEdgeInsetsInsetRect(self.overlayContainer.bounds, UIEdgeInsetsMake(
         safeArea.top + 8,
         safeArea.left + 8,
         safeArea.bottom + 8,
         safeArea.right + 8
     ));
     if (CGRectGetWidth(visibleBounds) <= 1 || CGRectGetHeight(visibleBounds) <= 1) {
-        visibleBounds = CGRectInset(self.view.bounds, 8, 8);
+        visibleBounds = CGRectInset(self.overlayContainer.bounds, 8, 8);
     }
 
     CGRect frame = self.subtitleView.frame;
@@ -161,7 +172,7 @@
             self.panStartCenter = self.subtitleView.center;
             break;
         case UIGestureRecognizerStateChanged: {
-            CGPoint translation = [recognizer translationInView:self.view];
+            CGPoint translation = [recognizer translationInView:self.overlayContainer];
             self.subtitleView.center = CGPointMake(self.lastSubtitleDefaultCenterX, self.panStartCenter.y + translation.y);
             [self clampSubtitleToVisibleAreaAnimated:NO];
             break;
@@ -196,7 +207,7 @@
 }
 
 - (void)layoutOverlayControlsAnimated:(BOOL)animated {
-    if (!self.subtitleView || !self.rotateButton) {
+    if (!self.overlayContainer || !self.subtitleView || !self.rotateButton) {
         return;
     }
     if (self.draggingSubtitle) {
@@ -204,12 +215,14 @@
     }
 
     void (^changes)(void) = ^{
-        CGSize size = self.view.bounds.size;
+        [self updateOverlayContainerGeometry];
+
+        CGSize size = self.overlayContainer.bounds.size;
         if (size.width <= 1 || size.height <= 1) {
             return;
         }
         UIEdgeInsets safeArea = self.view.safeAreaInsets;
-        BOOL wideLayout = size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
+        BOOL wideLayout = self.manualLandscapeFallback || size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
 
         CGFloat horizontalSafeWidth = size.width - safeArea.left - safeArea.right;
         if (horizontalSafeWidth <= 1) {
@@ -255,8 +268,8 @@
         );
     };
 
-    BOOL sizeChanged = !CGSizeEqualToSize(self.lastLayoutSize, self.view.bounds.size);
-    self.lastLayoutSize = self.view.bounds.size;
+    BOOL sizeChanged = !CGSizeEqualToSize(self.lastLayoutSize, self.overlayContainer.bounds.size);
+    self.lastLayoutSize = self.overlayContainer.bounds.size;
 
     if (animated) {
         [UIView animateWithDuration:sizeChanged ? 0.25 : 0.16 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:changes completion:nil];
@@ -265,8 +278,27 @@
     }
 }
 
+- (void)updateOverlayContainerGeometry {
+    CGSize size = self.view.bounds.size;
+    if (size.width <= 1 || size.height <= 1) {
+        return;
+    }
+
+    if (self.manualLandscapeFallback && size.height > size.width) {
+        CGFloat landscapeWidth = size.height;
+        CGFloat landscapeHeight = size.width;
+        self.overlayContainer.bounds = CGRectMake(0, 0, landscapeWidth, landscapeHeight);
+        self.overlayContainer.center = CGPointMake(size.width / 2.0, size.height / 2.0);
+        self.overlayContainer.transform = CGAffineTransformMakeRotation((CGFloat)M_PI_2);
+    } else {
+        self.overlayContainer.transform = CGAffineTransformIdentity;
+        self.overlayContainer.frame = self.view.bounds;
+    }
+}
+
 - (void)toggleOrientation {
     self.forceLandscape = !self.forceLandscape;
+    self.manualLandscapeFallback = NO;
     [self.rotateButton setTitle:self.forceLandscape ? @"Doc" : @"Ngang" forState:UIControlStateNormal];
     [self setNeedsUpdateOfSupportedInterfaceOrientations];
     [self layoutOverlayControlsAnimated:YES];
@@ -299,6 +331,22 @@
     }
 
     [self.view setNeedsLayout];
+    [self verifyLandscapeFallbackAfterRotationRequest];
+}
+
+- (void)verifyLandscapeFallbackAfterRotationRequest {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self.forceLandscape) {
+            self.manualLandscapeFallback = NO;
+            [self layoutOverlayControlsAnimated:YES];
+            return;
+        }
+
+        CGSize size = self.view.bounds.size;
+        BOOL sceneIsLandscape = size.width > size.height || UIInterfaceOrientationIsLandscape(self.view.window.windowScene.interfaceOrientation);
+        self.manualLandscapeFallback = !sceneIsLandscape;
+        [self layoutOverlayControlsAnimated:YES];
+    });
 }
 
 @end
