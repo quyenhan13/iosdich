@@ -24,6 +24,7 @@
     settings.deactivationReasons = 0;
     settings.foreground = YES;
     settings.interruptionPolicy = 0;
+    settings.statusBarDisabled = YES;
     parameters.settings = settings;
     parameters.clientSettings = windowScene._effectiveUIClientSettings;
 
@@ -41,6 +42,8 @@
     
     self.window = [[UIWindow alloc] initWithWindowScene:windowScene];
     self.window.frame = windowScene.coordinateSpace.bounds;
+    self.window.backgroundColor = UIColor.clearColor;
+    self.window.opaque = NO;
     self.window.rootViewController = [ViewController new];
     [self.window makeKeyAndVisible];
 }

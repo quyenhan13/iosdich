@@ -14,30 +14,31 @@
 
 - (instancetype)initWithFrame:(CGRect)frame navigationBar:(UINavigationBar *)navigationBar {
     self = [super initWithFrame:frame];
-    self.backgroundColor = UIColor.systemBackgroundColor;
+    self.backgroundColor = UIColor.clearColor;
+    self.opaque = NO;
     self.layer.cornerRadius = 10;
     self.layer.masksToBounds = YES;
 
     self.navigationBar = navigationBar;
     self.navigationItem = navigationBar.items.firstObject;
-    if (!self.navigationBar.superview) {
-        [self addSubview:self.navigationBar];
-    }
+    self.navigationBar.hidden = YES;
     
-    CGFloat navBarHeight = self.navigationBar.frame.size.height;
+    CGFloat navBarHeight = 0;
     CGRect contentFrame = CGRectMake(0, navBarHeight, self.frame.size.width, self.frame.size.height - navBarHeight);
 
     UIView *contentView = [[UIView alloc] initWithFrame:contentFrame];
+    contentView.backgroundColor = UIColor.clearColor;
+    contentView.opaque = NO;
     contentView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     contentView.layer.anchorPoint = CGPointMake(0, 0);
-    contentView.layer.position = CGPointMake(0, self.navigationBar.frame.size.height);
+    contentView.layer.position = CGPointMake(0, navBarHeight);
     self.contentView = contentView;
     [self addSubview:contentView];
 
     UIPanGestureRecognizer *moveGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveWindow:)];
     moveGesture.minimumNumberOfTouches = 1;
     moveGesture.maximumNumberOfTouches = 1;
-    [self.navigationBar addGestureRecognizer:moveGesture];
+    [self addGestureRecognizer:moveGesture];
 
     // Resize handle (idea stolen from Notes debugging window)
     UIPanGestureRecognizer *resizeGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(resizeWindow:)];
@@ -47,8 +48,8 @@
     [self.resizeHandle addGestureRecognizer:resizeGesture];
     [self addSubview:self.resizeHandle];
     
-    self.layer.borderWidth = 1.0;
-    self.layer.borderColor = UIColor.secondarySystemBackgroundColor.CGColor;
+    self.layer.borderWidth = 0;
+    self.layer.borderColor = UIColor.clearColor.CGColor;
     
     return self;
 }

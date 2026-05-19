@@ -9,10 +9,21 @@
 
 @implementation ViewController
 
+- (BOOL)prefersStatusBarHidden {
+    return YES;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.navigationController.navigationBarHidden = YES;
+    self.title = nil;
+}
+
 - (void)loadView {
     [super loadView];
     self.view.backgroundColor = UIColor.clearColor;
-    self.title = @"Transifyr";
+    self.view.opaque = NO;
+    self.title = nil;
 
     CGFloat width = MIN(UIScreen.mainScreen.bounds.size.width - 32, 520);
     CGFloat height = 92;
@@ -23,15 +34,7 @@
     [self.view addSubview:subtitleView];
     [subtitleView start];
 
-    UINavigationBar *navigationBar = [[UINavigationBar alloc] initWithFrame:CGRectMake(0, 0, 400, 44)];
-    navigationBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    UINavigationItem *navigationItem = [[UINavigationItem alloc] initWithTitle:@"Transifyr"];
-    navigationBar.items = @[navigationItem];
-
-    DecoratedFloatingView *handleView = [[DecoratedFloatingView alloc] initWithFrame:CGRectMake(0, 0, 400, 96) navigationBar:navigationBar];
-    handleView.center = CGPointMake(self.view.center.x, 80);
-    handleView.alpha = 0.35;
-    [self.view addSubview:handleView];
+    // Keep the shell visually transparent; the old drag/title handle created a dark band over SpringBoard.
 }
 
 @end

@@ -9,6 +9,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private let defaults = UserDefaults(suiteName: appGroupID)
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
+        setBroadcastStatus("starting")
         let sharedSettings = loadSharedSettingsFile()
         let apiKey = firstNonEmpty(
             defaults?.string(forKey: "soniox_api_key_fallback"),
@@ -24,6 +25,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         ) ?? "vi"
 
         guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            setBroadcastStatus("missing_api_key")
             finishBroadcastWithError(NSError(domain: "TransifyrBroadcast", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Chưa có Soniox API Key. Mở app Transifyr và lưu key trước."
             ]))
@@ -34,8 +36,18 @@ final class SampleHandler: RPBroadcastSampleHandler {
             self?.defaults?.set(original, forKey: "broadcast_current_original")
             self?.defaults?.set(translation, forKey: "broadcast_current_translation")
             self?.defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_current_translation_at")
+            self?.setBroadcastStatus("receiving_translation")
+        }
+        client.onStatus = { [weak self] status in
+            self?.setBroadcastStatus(status)
         }
         client.connect(apiKey: apiKey, sourceLang: sourceLang, targetLang: targetLang)
+    }
+
+    private func setBroadcastStatus(_ status: String) {
+        defaults?.set(status, forKey: "broadcast_status")
+        defaults?.set(Date().timeIntervalSince1970, forKey: "broadcast_status_at")
+        defaults?.synchronize()
     }
 
     private func firstNonEmpty(_ values: String?...) -> String? {
@@ -58,12 +70,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
 
     override func broadcastFinished() {
+        setBroadcastStatus("finished")
         client.disconnect()
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
         guard sampleBufferType == .audioApp else { return }
         guard let pcm = converter.convert(sampleBuffer), !pcm.isEmpty else { return }
+        setBroadcastStatus("sending_audio")
         client.sendAudio(pcm)
     }
 }
@@ -79,8 +93,10 @@ private final class BroadcastSonioxClient {
     private var configSent = false
     private var configPayload: String = ""
     var onTranslation: ((String, String) -> Void)?
+    var onStatus: ((String) -> Void)?
 
     func connect(apiKey: String, sourceLang: String, targetLang: String) {
+        onStatus?("connecting")
         let url = URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!
         socket = session.webSocketTask(with: url)
 
@@ -112,10 +128,13 @@ private final class BroadcastSonioxClient {
             guard let self else { return }
             if error == nil {
                 self.configSent = true
+                self.onStatus?("connected")
                 for chunk in self.pendingAudio {
                     self.socket?.send(.data(chunk)) { _ in }
                 }
                 self.pendingAudio.removeAll()
+            } else {
+                self.onStatus?("config_send_failed")
             }
         }
         receiveLoop()
@@ -166,6 +185,7 @@ private final class BroadcastSonioxClient {
 
         if let errCode = json["error_code"] {
             _ = errCode
+            onStatus?("soniox_error")
             return
         }
 
@@ -251,18 +271,32 @@ private final class BroadcastPCMConverter {
             return nil
         }
 
-        let stream = streamDescription.pointee
         guard let format = AVAudioFormat(streamDescription: streamDescription) else { return nil }
         let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
         guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return nil }
 
         var blockBuffer: CMBlockBuffer?
-        var audioBufferList = AudioBufferList()
-        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+        var neededSize = 0
+        var status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &neededSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr, neededSize > 0 else { return nil }
+
+        let rawABL = UnsafeMutableRawPointer.allocate(byteCount: neededSize, alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { rawABL.deallocate() }
+
+        status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
             sampleBuffer,
             bufferListSizeNeededOut: nil,
-            bufferListOut: &audioBufferList,
-            bufferListSize: MemoryLayout<AudioBufferList>.size,
+            bufferListOut: rawABL.assumingMemoryBound(to: AudioBufferList.self),
+            bufferListSize: neededSize,
             blockBufferAllocator: kCFAllocatorDefault,
             blockBufferMemoryAllocator: kCFAllocatorDefault,
             flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
@@ -271,21 +305,56 @@ private final class BroadcastPCMConverter {
         guard status == noErr else { return nil }
 
         pcmBuffer.frameLength = frameCount
-        let bytesPerFrame = Int(stream.mBytesPerFrame) > 1 ? Int(stream.mBytesPerFrame) : 1
-        let byteCount = Int(frameCount) * bytesPerFrame
-
-        if stream.mFormatFlags & kAudioFormatFlagIsFloat != 0, let floatChannelData = pcmBuffer.floatChannelData {
-            let source = audioBufferList.mBuffers.mData!.assumingMemoryBound(to: Float.self)
-            let count = Int(frameCount) < byteCount / MemoryLayout<Float>.size ? Int(frameCount) : byteCount / MemoryLayout<Float>.size
-            floatChannelData[0].assign(from: source, count: count)
-        } else if let int16ChannelData = pcmBuffer.int16ChannelData {
-            let source = audioBufferList.mBuffers.mData!.assumingMemoryBound(to: Int16.self)
-            let count = Int(frameCount) < byteCount / MemoryLayout<Int16>.size ? Int(frameCount) : byteCount / MemoryLayout<Int16>.size
-            int16ChannelData[0].assign(from: source, count: count)
-        } else {
+        if !copyAudioBuffers(rawABL.assumingMemoryBound(to: AudioBufferList.self), streamDescription: streamDescription, to: pcmBuffer) {
             return nil
         }
 
         return pcmBuffer
+    }
+
+    private func copyAudioBuffers(_ audioBufferList: UnsafeMutablePointer<AudioBufferList>, streamDescription: UnsafePointer<AudioStreamBasicDescription>, to pcmBuffer: AVAudioPCMBuffer) -> Bool {
+        let stream = streamDescription.pointee
+        let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+        let channelCount = Int(pcmBuffer.format.channelCount)
+        let frameCount = Int(pcmBuffer.frameLength)
+        let isInterleaved = stream.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
+
+        if stream.mFormatFlags & kAudioFormatFlagIsFloat != 0, let destination = pcmBuffer.floatChannelData {
+            if isInterleaved {
+                guard let sourceData = buffers.first?.mData else { return false }
+                let source = sourceData.assumingMemoryBound(to: Float.self)
+                for frame in 0..<frameCount {
+                    for channel in 0..<channelCount {
+                        destination[channel][frame] = source[frame * channelCount + channel]
+                    }
+                }
+            } else {
+                for channel in 0..<min(channelCount, buffers.count) {
+                    guard let sourceData = buffers[channel].mData else { continue }
+                    destination[channel].assign(from: sourceData.assumingMemoryBound(to: Float.self), count: frameCount)
+                }
+            }
+            return true
+        }
+
+        guard stream.mBitsPerChannel == 16, let destination = pcmBuffer.int16ChannelData else {
+            return false
+        }
+
+        if isInterleaved {
+            guard let sourceData = buffers.first?.mData else { return false }
+            let source = sourceData.assumingMemoryBound(to: Int16.self)
+            for frame in 0..<frameCount {
+                for channel in 0..<channelCount {
+                    destination[channel][frame] = source[frame * channelCount + channel]
+                }
+            }
+        } else {
+            for channel in 0..<min(channelCount, buffers.count) {
+                guard let sourceData = buffers[channel].mData else { continue }
+                destination[channel].assign(from: sourceData.assumingMemoryBound(to: Int16.self), count: frameCount)
+            }
+        }
+        return true
     }
 }
