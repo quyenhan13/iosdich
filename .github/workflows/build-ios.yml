@@ -122,29 +122,6 @@ jobs:
           name: TransifyrFrontBoard-trollstore-tipa
           path: TransifyrFrontBoard.tipa
 
-      - name: Download main app artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: RealtimeTranslator-trollstore-ipa
-          path: combined-input
-
-      - name: Build combined TrollStore package
-        run: |
-          set -e
-          rm -rf combined-main combined-shell combined-package
-          mkdir -p combined-main combined-shell combined-package/Payload
-          unzip -q combined-input/RealtimeTranslator-trollstore.ipa -d combined-main
-          unzip -q TransifyrFrontBoard.tipa -d combined-shell
-          cp -R combined-main/Payload/*.app combined-package/Payload/
-          cp -R combined-shell/Payload/*.app combined-package/Payload/
-          (cd combined-package && zip -qr "$GITHUB_WORKSPACE/Transifyr-combined.tipa" Payload)
-
-      - name: Upload combined package
-        uses: actions/upload-artifact@v4
-        with:
-          name: Transifyr-combined-tipa
-          path: Transifyr-combined.tipa
-
       - name: Attach FrontBoard shell to latest release
         if: github.ref == 'refs/heads/main'
         env:
@@ -152,4 +129,3 @@ jobs:
         run: |
           set -e
           gh release upload latest TransifyrFrontBoard.tipa --clobber
-          gh release upload latest Transifyr-combined.tipa --clobber
