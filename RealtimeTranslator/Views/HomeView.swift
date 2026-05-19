@@ -202,8 +202,8 @@ struct HomeView: View {
                     .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 1))
             }
 
-            Button(action: openFrontBoardShell) {
-                Image(systemName: "rectangle.on.rectangle.circle.fill")
+            Button(action: showEmbeddedSubtitleOverlay) {
+                Image(systemName: "captions.bubble.fill")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: 42, height: 42)
@@ -327,13 +327,22 @@ struct HomeView: View {
         }
     }
 
-    private func openFrontBoardShell() {
-        guard let url = URL(string: "transifyr-frontboard://show") else { return }
-        UIApplication.shared.open(url) { success in
-            if !success {
-                alertMessage = "Chua cai TransifyrFrontBoard.tipa hoac TrollStore chua cho mo shell."
-                showAlert = true
-            }
+    private func showEmbeddedSubtitleOverlay() {
+        guard systemOverlay.isSupported else {
+            alertMessage = "May nay khong ho tro PiP overlay de hien phu de noi."
+            showAlert = true
+            return
+        }
+
+        if !systemOverlay.isRunning {
+            systemOverlay.start()
+        }
+
+        if subtitleManager.currentText.isEmpty && subtitleManager.currentTranslatedText.isEmpty {
+            systemOverlay.update(
+                text: "Subtitle overlay is ready.",
+                translation: "Phu de noi da san sang."
+            )
         }
     }
 
