@@ -6,8 +6,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (NSString *)currentTranslation;
 - (BOOL)hasFreshTranslation;
-- (BOOL)hasActiveAudio;
-- (BOOL)hasVisibleActivity;
 
 @end
 

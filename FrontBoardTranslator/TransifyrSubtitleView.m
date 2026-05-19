@@ -67,16 +67,4 @@
     self.hidden = !shouldShow;
 }
 
-- (void)setHidden:(BOOL)hidden {
-    [super setHidden:hidden];
-}
-
-- (BOOL)hasActiveAudio {
-    return [self.store hasActiveAudio];
-}
-
-- (BOOL)hasVisibleActivity {
-    return [self.store hasVisibleActivity];
-}
-
 @end

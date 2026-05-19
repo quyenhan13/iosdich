@@ -31,13 +31,14 @@ final class SubtitleManager: ObservableObject {
         
         resetSilenceTimer()
         
+        let originalText = words.map { $0.text }.joined(separator: " ")
         let translatedText = words.map { $0.textTranslated ?? "" }.joined(separator: " ")
         
         let isFinal = response.final ?? false
 
         DispatchQueue.main.async {
             if isFinal {
-                let finalLine = SubtitleLine(text: "", textTranslated: translatedText, isFinal: true)
+                let finalLine = SubtitleLine(text: originalText, textTranslated: translatedText, isFinal: true)
                 self.historyLines.append(finalLine)
                 
                 if self.historyLines.count > 15 {
@@ -47,7 +48,7 @@ final class SubtitleManager: ObservableObject {
                 self.currentText = ""
                 self.currentTranslatedText = ""
             } else {
-                self.currentText = ""
+                self.currentText = originalText
                 self.currentTranslatedText = translatedText
             }
         }
@@ -84,7 +85,8 @@ final class SubtitleManager: ObservableObject {
     private func handleSonioxTokens(_ tokens: [SonioxToken]) {
         resetSilenceTimer()
 
-        var latestTranslation = ""
+        var nonFinalOriginal = ""
+        var nonFinalTranslation = ""
         var isEndpoint = false
 
         for token in tokens {
@@ -96,24 +98,36 @@ final class SubtitleManager: ObservableObject {
             guard !text.isEmpty else { continue }
 
             if token.isTranslation {
-                latestTranslation += text
+                if token.isCommitted {
+                    finalTranslationTokens.append(text)
+                } else {
+                    nonFinalTranslation += text
+                }
+            } else if token.isOriginal {
+                if token.isCommitted {
+                    finalOriginalTokens.append(text)
+                } else {
+                    nonFinalOriginal += text
+                }
             }
         }
 
-        let displayTranslation = trimSubtitleBuffer(latestTranslation)
+        let displayOriginal = trimSubtitleBuffer((finalOriginalTokens.joined() + nonFinalOriginal))
+        let displayTranslation = trimSubtitleBuffer((finalTranslationTokens.joined() + nonFinalTranslation))
 
-        if !displayTranslation.isEmpty {
+        if !displayOriginal.isEmpty || !displayTranslation.isEmpty {
             DispatchQueue.main.async {
-                self.currentText = ""
+                self.currentText = displayOriginal
                 self.currentTranslatedText = displayTranslation
             }
         }
 
         if isEndpoint {
             let translation = displayTranslation
-            if !translation.isEmpty {
+            let original = displayOriginal
+            if !translation.isEmpty || !original.isEmpty {
                 DispatchQueue.main.async {
-                    self.historyLines.append(SubtitleLine(text: "", textTranslated: translation, isFinal: true))
+                    self.historyLines.append(SubtitleLine(text: original, textTranslated: translation, isFinal: true))
                     if self.historyLines.count > 15 {
                         self.historyLines.removeFirst()
                     }
